@@ -1,0 +1,18 @@
+# Memoria MCP Server Requirements
+# FastMCP for MCP server functionality
+fastmcp==2.1.0
+
+# Redis for session persistence
+redis>=5.0.0
+
+# ASGI server
+uvicorn>=0.30.0
+
+# Structured logging
+structlog>=24.0.0
+
+# Raggy dependencies (from raggy/pyproject.toml)
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+PyPDF2>=3.0.0
+python-docx>=1.0.0
