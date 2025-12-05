@@ -68,20 +68,16 @@ Memoria is a lightweight RAG (Retrieval-Augmented Generation) skill that provide
 ### Setup
 
 ```bash
-# Navigate to memoria skill
+# Create shared virtual environment (if not exists)
+cd ~/Github/thinker/claude_infra/skills
+python3 -m venv .venv
+
+# Install memoria into shared venv
 cd ~/Github/thinker/claude_infra/skills/memoria
-
-# Create virtual environment (if not exists)
-python -m venv .venv
-
-# Activate virtual environment
-source .venv/bin/activate
-
-# Install dependencies
-pip install -e .
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .
 
 # Install development dependencies (optional)
-pip install -e ".[dev]"
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e ".[dev]"
 ```
 
 ### Verify Installation
@@ -236,20 +232,20 @@ Returns statistics about the knowledge base.
 ### Run All Tests
 
 ```bash
-# Activate virtual environment
-source .venv/bin/activate
+# Use shared venv with absolute paths
+cd ~/Github/thinker/claude_infra/skills/memoria
 
 # Run all tests with coverage
-pytest tests/ -v --cov=memoria --cov-report=term-missing
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v --cov=memoria --cov-report=term-missing
 
 # Run only unit tests (fast)
-pytest tests/ -v -m unit
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v -m unit
 
 # Run only integration tests (requires ChromaDB)
-pytest tests/ -v -m integration
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v -m integration
 
 # Run with specific verbosity
-pytest tests/ -v --tb=short
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v --tb=short
 ```
 
 ### Test Organization
@@ -389,14 +385,12 @@ curl http://localhost:8001/api/v1/heartbeat
 ### Import Errors
 
 ```bash
-# Ensure virtual environment is activated
-source .venv/bin/activate
-
-# Reinstall in editable mode
-pip install -e .
+# Reinstall using shared venv
+cd ~/Github/thinker/claude_infra/skills/memoria
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .
 
 # Check Python path
-python -c "import sys; print('\n'.join(sys.path))"
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python -c "import sys; print('\n'.join(sys.path))"
 ```
 
 ### Test Failures

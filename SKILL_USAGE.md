@@ -838,7 +838,7 @@ Not sure? → mode="hybrid" (default, best balance)
 
 ### Common Gotchas
 
-1. **Forgot to activate venv**: Always `source .venv/bin/activate`
+1. **Using relative paths**: Always use absolute paths with shared venv: `/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3`
 2. **ChromaDB not running**: Check `docker ps | grep chroma`
 3. **Documents not indexed**: Run `index_documents()` after adding
 4. **No results**: Try broader query or different search mode

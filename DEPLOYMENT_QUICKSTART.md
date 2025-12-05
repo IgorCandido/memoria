@@ -31,34 +31,32 @@ Before deployment, ensure:
 
 ## Quick Setup (5 Minutes)
 
-### 1. Navigate to Memoria
+### 1. Create Shared Virtual Environment (if not exists)
 
 ```bash
-cd ~/Github/thinker/claude_infra/skills/memoria
-```
-
-### 2. Create Virtual Environment
-
-```bash
+cd ~/Github/thinker/claude_infra/skills
 python3 -m venv .venv
 ```
 
-### 3. Install Dependencies
+### 2. Install Memoria Dependencies
 
 ```bash
-.venv/bin/pip install -e .
+cd ~/Github/thinker/claude_infra/skills/memoria
+
+# Use shared venv with absolute path
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .
 
 # Optional: Install dev dependencies (for testing)
-.venv/bin/pip install -e ".[dev]"
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e ".[dev]"
 ```
 
-### 4. Verify Installation
+### 3. Verify Installation
 
 ```bash
-# Test health check
-.venv/bin/python3 << 'EOF'
+# Test health check (use ABSOLUTE paths!)
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 << 'EOF'
 import sys
-sys.path.insert(0, 'memoria')
+sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
 from skill_helpers import health_check
 print(health_check())
 EOF
@@ -73,7 +71,7 @@ EOF
  Docs        ✅ XX files
 ```
 
-### 5. Test Search
+### 4. Test Search
 
 ```bash
 # Test search functionality
@@ -146,12 +144,12 @@ curl http://localhost:8001/api/v2/heartbeat
 # Ensure you're in the right directory
 cd ~/Github/thinker/claude_infra/skills/memoria
 
-# Reinstall
-.venv/bin/pip install -e .
+# Reinstall using shared venv
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .
 
-# Use correct sys.path in your code
+# Use correct sys.path in your code (absolute path required)
 import sys
-sys.path.insert(0, '/path/to/memoria/memoria')  # Note: memoria/memoria
+sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
 ```
 
 ### Issue: Slow Search
@@ -177,13 +175,12 @@ search_knowledge(query="...", mode="semantic")
 ### Run Core Tests
 
 ```bash
+# Use shared venv with absolute paths (works from any directory)
 cd ~/Github/thinker/claude_infra/skills/memoria
-
-# Run all core tests
-.venv/bin/pytest tests/domain tests/adapters tests/ports -v
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/domain tests/adapters tests/ports -v
 
 # Run with coverage
-.venv/bin/pytest tests/domain tests/adapters tests/ports -v --cov=memoria
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/domain tests/adapters tests/ports -v --cov=memoria
 ```
 
 **Expected Result**: 129/129 tests passing
@@ -264,8 +261,8 @@ cd ~/Github/thinker/claude_infra/skills/memoria
 ### Health Check Command
 
 ```bash
-cd ~/Github/thinker/claude_infra/skills/memoria
-.venv/bin/python3 -c "import sys; sys.path.insert(0, 'memoria'); from skill_helpers import health_check; print(health_check())"
+# Use absolute paths (works from any directory)
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 -c "import sys; sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria'); from skill_helpers import health_check; print(health_check())"
 ```
 
 ### Check ChromaDB Status
@@ -284,8 +281,9 @@ curl http://localhost:8001/api/v2/collections
 ### Run Quick Test
 
 ```bash
+# Use shared venv with absolute path
 cd ~/Github/thinker/claude_infra/skills/memoria
-.venv/bin/pytest tests/domain/test_entities.py -v
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/domain/test_entities.py -v
 ```
 
 ---
@@ -308,8 +306,8 @@ cd ~/Github/thinker/claude_infra/skills/memoria
 ### If Issues Occur
 
 1. Check ChromaDB is running: `docker ps | grep chroma`
-2. Verify venv installed: `ls .venv/bin/python3`
-3. Test imports: `python3 -c "import chromadb, sentence_transformers"`
+2. Verify shared venv installed: `ls ~/Github/thinker/claude_infra/skills/.venv/bin/python3`
+3. Test imports: `/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 -c "import chromadb, sentence_transformers"`
 4. Read DEPLOYMENT_READINESS.md for detailed troubleshooting
 
 ---
@@ -328,15 +326,19 @@ cd ~/Github/thinker/claude_infra/skills/memoria
 
 ### Installation
 ```bash
-cd ~/Github/thinker/claude_infra/skills/memoria
+# Create shared venv (if not exists)
+cd ~/Github/thinker/claude_infra/skills
 python3 -m venv .venv
-.venv/bin/pip install -e .
+
+# Install memoria into shared venv
+cd ~/Github/thinker/claude_infra/skills/memoria
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .
 ```
 
 ### Usage
 ```python
 import sys
-sys.path.insert(0, '/path/to/memoria/memoria')
+sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
 from skill_helpers import search_knowledge
 search_knowledge("query", mode="hybrid", limit=5)
 ```
@@ -348,7 +350,8 @@ curl http://localhost:8001/api/v2/heartbeat
 
 ### Testing
 ```bash
-.venv/bin/pytest tests/domain tests/adapters tests/ports -v
+cd ~/Github/thinker/claude_infra/skills/memoria
+/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/domain tests/adapters tests/ports -v
 ```
 
 ---
@@ -373,7 +376,7 @@ curl http://localhost:8001/api/v2/heartbeat
 
 ### Q: How do I update memoria?
 
-**A**: `git pull` in the memoria directory, then `.venv/bin/pip install -e .` to reinstall.
+**A**: `git pull` in the memoria directory, then use shared venv: `/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .` to reinstall.
 
 ### Q: Where are the docs stored?
 
