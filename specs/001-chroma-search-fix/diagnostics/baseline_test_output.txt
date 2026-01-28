@@ -1,0 +1,69 @@
+📊 ChromaDB Baseline Test Suite
+============================================================
+Test Queries: 20
+Output File: baseline_results.csv
+
+[1/20] Testing: 'claude loop protocol'
+  ❌ ERROR: string indices must be integers, not 'str'
+[2/20] Testing: 'RAG compliance monitoring'
+  ❌ ERROR: string indices must be integers, not 'str'
+[3/20] Testing: 'agent catalog'
+  ❌ ERROR: string indices must be integers, not 'str'
+[4/20] Testing: 'memoria skill usage'
+  ❌ ERROR: string indices must be integers, not 'str'
+[5/20] Testing: 'MCP tool decision tree'
+  ❌ ERROR: string indices must be integers, not 'str'
+[6/20] Testing: 'specialized agent workers'
+  ❌ ERROR: string indices must be integers, not 'str'
+[7/20] Testing: 'query tracking system'
+  ❌ ERROR: string indices must be integers, not 'str'
+[8/20] Testing: 'task-specific AI assistants'
+  ❌ ERROR: string indices must be integers, not 'str'
+[9/20] Testing: 'commit search with embeddings'
+  ❌ ERROR: string indices must be integers, not 'str'
+[10/20] Testing: 'autonomous coding agents'
+  ❌ ERROR: string indices must be integers, not 'str'
+[11/20] Testing: 'how to use skills'
+  ❌ ERROR: string indices must be integers, not 'str'
+[12/20] Testing: 'agent communication patterns'
+  ❌ ERROR: string indices must be integers, not 'str'
+[13/20] Testing: 'ChromaDB integration'
+  ❌ ERROR: string indices must be integers, not 'str'
+[14/20] Testing: 'git history search'
+  ❌ ERROR: string indices must be integers, not 'str'
+[15/20] Testing: 'workflow automation'
+  ❌ ERROR: string indices must be integers, not 'str'
+[16/20] Testing: 'docker'
+  ❌ ERROR: string indices must be integers, not 'str'
+[17/20] Testing: 'compliance report format daily monitoring'
+  ❌ ERROR: string indices must be integers, not 'str'
+[18/20] Testing: 'xyz123notfound'
+  ❌ ERROR: string indices must be integers, not 'str'
+[19/20] Testing: 'agent'
+  ❌ ERROR: string indices must be integers, not 'str'
+[20/20] Testing: 'troubleshooting failed tests'
+  ❌ ERROR: string indices must be integers, not 'str'
+
+============================================================
+📈 Summary Statistics
+============================================================
+Total Queries: 20
+Successful Queries: 0 (0.0%)
+Queries with 5+ Results: 0 (0.0%)
+Average Results per Query: 0.00
+Average Top Score: 0.0000
+Average Score Range: 0.0000
+Average Execution Time: 0.0ms
+
+✅ Results exported to: /Users/igorcandido/Github/thinker/memoria/specs/001-chroma-search-fix/diagnostics/baseline_results.csv
+
+🎯 Success Criteria Check (Current Baseline)
+============================================================
+SC-001: 90% queries return 5+ results
+  Status: ❌ FAIL (0.0% with 5+ results)
+SC-002: Score range ≥0.4
+  Status: ❌ FAIL (avg range: 0.0000)
+SC-003: High-relevance queries score ≥0.7
+  Status: ❌ FAIL (0/0 queries)
+SC-006: Query time <2 seconds
+  Status: ✅ PASS (avg: 0.0ms, p95: TBD)

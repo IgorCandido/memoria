@@ -130,6 +130,15 @@ class ChromaDBAdapter:
             n_results=k,
         )
 
+        # Diagnostic logging (can be disabled for production)
+        import os
+        if os.getenv("MEMORIA_DEBUG"):
+            num_results = len(results["ids"][0]) if results["ids"] else 0
+            print(f"[DEBUG] ChromaDB returned {num_results} results for k={k}")
+            if results.get("distances") and results["distances"][0]:
+                distances = results["distances"][0]
+                print(f"[DEBUG] Distance range: [{min(distances):.6f}, {max(distances):.6f}]")
+
         # Convert to SearchResult entities
         search_results: list[SearchResult] = []
 

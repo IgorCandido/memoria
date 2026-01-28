@@ -80,8 +80,8 @@ def _get_adapters():
         )
 
         _embedder = SentenceTransformerAdapter(model_name="all-MiniLM-L6-v2")
-        _search_engine = SearchEngineAdapter(_vector_store, _embedder, hybrid_weight=0.7)
-        _document_processor = DocumentProcessorAdapter(chunk_size=1000, chunk_overlap=200)
+        _search_engine = SearchEngineAdapter(_vector_store, _embedder, hybrid_weight=0.95)
+        _document_processor = DocumentProcessorAdapter(chunk_size=2000, chunk_overlap=100)
 
     return _vector_store, _embedder, _search_engine, _document_processor
 

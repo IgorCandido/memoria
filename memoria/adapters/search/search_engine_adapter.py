@@ -27,7 +27,7 @@ class SearchEngineAdapter:
         self,
         vector_store: VectorStorePort,
         embedding_generator: EmbeddingGeneratorPort,
-        hybrid_weight: float = 0.7,
+        hybrid_weight: float = 0.95,
     ) -> None:
         """
         Initialize search engine adapter.
@@ -36,6 +36,7 @@ class SearchEngineAdapter:
             vector_store: Vector store for document retrieval
             embedding_generator: Generator for query embeddings
             hybrid_weight: Weight for semantic vs keyword (0.0-1.0, higher = more semantic)
+                          Default 0.95 (95% semantic, 5% BM25) to prevent score compression
         """
         self._vector_store = vector_store
         self._embedder = embedding_generator

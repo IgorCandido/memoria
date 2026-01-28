@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/Users/igorcandido/Github/thinker/memoria/specs/001-chroma-search-fix/diagnostics/check_collection_health.py", line 124, in check_collection_health
+    if not embeddings:
+           ^^^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+🔍 ChromaDB Collection Health Check
+============================================================
+Collection: memoria
+Total Documents: 16076
+Sampling: 100 embeddings for analysis
+❌ ERROR: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
