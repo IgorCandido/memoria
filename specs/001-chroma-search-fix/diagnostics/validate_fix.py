@@ -38,6 +38,14 @@ HIGH_RELEVANCE_QUERIES = [
     "agent catalog",
 ]
 
+# Semantic query pairs (synonym/paraphrase pairs that should find overlapping results)
+SEMANTIC_QUERY_PAIRS = [
+    ("query tracking system", "RAG compliance monitoring"),
+    ("task-specific AI workers", "specialized agents"),
+    ("code commit search", "git history semantic search"),
+    ("casual autonomous assistants", "professional AI agents"),
+]
+
 
 def validate_sc001(search_engine):
     """
@@ -151,6 +159,53 @@ def validate_sc003(search_engine):
     return passed, f"{percentage:.1f}% high-relevance with ≥0.7 score"
 
 
+def validate_sc004(search_engine):
+    """
+    SC-004: Semantic queries retrieve conceptually related results in top 5
+
+    Tests that synonym/paraphrase queries find overlapping results,
+    demonstrating semantic understanding beyond keyword matching.
+
+    Returns:
+        (passed: bool, details: str)
+    """
+    print("Testing SC-004: Semantic retrieval in top 5")
+    print("-" * 80)
+
+    successful_pairs = 0
+    total_pairs = len(SEMANTIC_QUERY_PAIRS)
+
+    for query1, query2 in SEMANTIC_QUERY_PAIRS:
+        results1 = search_engine.search(query=query1, limit=5, mode="hybrid")
+        results2 = search_engine.search(query=query2, limit=5, mode="hybrid")
+
+        # Get document IDs from top 5 results
+        docs1 = {r.document.id for r in results1[:5]}
+        docs2 = {r.document.id for r in results2[:5]}
+
+        # Check for overlap
+        overlap = docs1 & docs2
+        has_semantic_match = len(overlap) > 0
+
+        if has_semantic_match:
+            successful_pairs += 1
+            status = "✅"
+        else:
+            status = "❌"
+
+        print(f"  {status} '{query1}' <-> '{query2}': {len(overlap)} shared docs in top 5")
+
+    percentage = (successful_pairs / total_pairs) * 100
+    passed = percentage >= 75.0  # Allow 75% success rate
+
+    print()
+    print(f"Result: {successful_pairs}/{total_pairs} query pairs found semantic matches ({percentage:.1f}%)")
+    print(f"Status: {'✅ PASS' if passed else '❌ FAIL'} (need ≥75%)")
+    print()
+
+    return passed, f"{percentage:.1f}% semantic query pairs matched"
+
+
 def main():
     """Run all validation tests"""
     print("=" * 80)
@@ -177,6 +232,7 @@ def main():
     results["SC-001"] = validate_sc001(search_engine)
     results["SC-002"] = validate_sc002(search_engine)
     results["SC-003"] = validate_sc003(search_engine)
+    results["SC-004"] = validate_sc004(search_engine)
 
     # Summary
     print("=" * 80)

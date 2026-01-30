@@ -209,7 +209,7 @@ class UniversalRAG:
         for doc in all_docs:
             embedding_result = self._embedder.embed_text(doc.content)
             # Create new document with embedding
-            from domain.entities import Document
+            from memoria.domain.entities import Document
             doc_with_embedding = Document(
                 id=doc.id,
                 content=doc.content,
