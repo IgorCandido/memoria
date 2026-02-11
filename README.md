@@ -1,617 +1,318 @@
-# Memoria - RAG Skill for Claude Code
+# Memoria - RAG Knowledge Base for Claude Code
 
-**Version**: 3.0.0 (Phase 2)
-**Status**: ✅ Production Ready
+**Version**: 3.1.0
+**Status**: Production Ready
 **Architecture**: Onion Architecture with Domain-Driven Design
 
-## Overview
+Memoria is a lightweight RAG (Retrieval-Augmented Generation) skill that gives Claude Code persistent memory through semantic search over your documents. It replaces heavy MCP server stacks with direct Python execution - 98.7% fewer tokens, 75% less memory.
 
-Memoria is a lightweight RAG (Retrieval-Augmented Generation) skill that provides semantic search capabilities to Claude Code without the overhead of MCP infrastructure. It replaces the heavy Docker-based MCP server approach with direct Python library execution.
+> **TODO**: An automated installer is planned for the next feature (spec 003). For now, follow the manual setup below.
 
-### Why Skills vs MCP?
-
-**Token Efficiency**: Skills reduce token usage by 98.7% (150,000 → 2,000 tokens per Anthropic guidance)
-
-**Memory Efficiency**: Skills use ~150MB vs ~700MB+ for MCP Docker containers
-
-**Simplicity**: Direct execution (2 layers) vs complex MCP stack (6+ layers)
-
-**Reliability**: No HTTP overhead, no session management, fail-fast error handling
-
-## Architecture
-
-### Onion Architecture (Phase 2)
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  skill_helpers.py                   │  ← High-level API for Claude
-│              (Formatted output with Rich)            │
-├─────────────────────────────────────────────────────┤
-│               Compatibility Layer                    │  ← UniversalRAG facade (optional)
-├─────────────────────────────────────────────────────┤
-│                  Adapters Layer                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
-│  │   ChromaDB   │  │  Sentence    │  │  Document │ │
-│  │   Adapter    │  │ Transformers │  │ Processor │ │
-│  └──────────────┘  └──────────────┘  └───────────┘ │
-│  ┌──────────────┐                                   │
-│  │    Search    │                                   │
-│  │    Engine    │                                   │
-│  └──────────────┘                                   │
-├─────────────────────────────────────────────────────┤
-│                  Domain Layer                        │
-│  Entities: Document, SearchResult, Chunk            │
-│  Value Objects: Embedding, Score, QueryTerms        │
-│  Ports: VectorStore, Embedder, SearchEngine         │
-├─────────────────────────────────────────────────────┤
-│              External Dependencies                   │
-│  ChromaDB (Docker) │ Sentence Transformers          │
-└─────────────────────────────────────────────────────┘
-```
-
-### Key Principles
-
-1. **Immutability**: All domain entities are frozen dataclasses
-2. **Port/Adapter**: Domain defines ports (interfaces), adapters implement them
-3. **Dependency Inversion**: Domain has zero dependencies on external libraries
-4. **Single Responsibility**: Each adapter handles one specific concern
-5. **Type Safety**: Full mypy strict mode compliance
-
-## Installation
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.11+
-- ChromaDB Docker container running on port 8001
-- ~500MB disk space for embeddings model
+- **macOS** (tested on macOS 15+)
+- **Python 3.11+** (`python3 --version`)
+- **Docker** via Colima or Docker Desktop (for ChromaDB)
+- **Claude Code** installed (`claude --version`)
 
-### Setup
-
-```bash
-# Create shared virtual environment (if not exists)
-cd ~/Github/thinker/claude_infra/skills
-python3 -m venv .venv
-
-# Install memoria into shared venv
-cd ~/Github/thinker/claude_infra/skills/memoria
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .
-
-# Install development dependencies (optional)
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e ".[dev]"
-```
-
-### Verify Installation
+### 1. Clone the Repository
 
 ```bash
-# Run tests
-pytest tests/ -v
+# Clone as bare repo (supports git worktrees for parallel feature work)
+git clone --bare git@github.com:IgorCandido/memoria.git ~/Github/thinker/memoria
 
-# Quick test
-python -c "from skill_helpers import health_check; print(health_check())"
+# Create the main worktree (this is where the code lives)
+cd ~/Github/thinker/memoria
+git worktree add main main
 ```
 
-## Usage
+### 2. Start ChromaDB
 
-### For Claude Code
+ChromaDB is the vector database that stores embeddings. It runs as a Docker container.
 
-Claude Code uses the skill definition in `~/.claude/skills/memoria.md`. See that file for complete usage instructions.
+```bash
+# Start ChromaDB container
+docker run -d \
+  --name memoria-chromadb \
+  -p 8001:8000 \
+  -v ~/Github/thinker/memoria/chroma_data:/data \
+  -e CHROMA_SERVER_HOST=0.0.0.0 \
+  -e CHROMA_SERVER_HTTP_PORT=8000 \
+  -e IS_PERSISTENT=TRUE \
+  chromadb/chroma:latest
 
-**Quick example**:
-```python
+# Verify it's running
+curl http://localhost:8001/api/v1/heartbeat
+# Should return: {"nanosecond heartbeat": ...}
+```
+
+The `chroma_data/` directory at the bare root stores all vector data persistently. It survives container restarts and worktree operations.
+
+### 3. Install Python Dependencies
+
+```bash
+# Create a virtual environment (or use an existing shared one)
+python3 -m venv ~/Github/thinker/memoria/main/.venv
+
+# Install memoria in editable mode
+~/Github/thinker/memoria/main/.venv/bin/pip install -e ~/Github/thinker/memoria/main/
+
+# Verify
+~/Github/thinker/memoria/main/.venv/bin/python3 -c "import memoria; print('OK:', memoria.__file__)"
+```
+
+### 4. Register as Claude Code Skill
+
+```bash
+# Create the skill symlink (Claude Code discovers skills from ~/.claude/skills/)
+mkdir -p ~/.claude/skills
+ln -sfn ~/Github/thinker/memoria/main ~/.claude/skills/memoria
+```
+
+### 5. Set Up Document Directory
+
+```bash
+# Create persistent docs directory at bare root (not inside a worktree)
+mkdir -p ~/Github/thinker/memoria/docs
+
+# Create symlink from worktree to bare root docs
+ln -sfn ../docs ~/Github/thinker/memoria/main/docs
+
+# Add your markdown documents
+cp ~/path/to/your/docs/*.md ~/Github/thinker/memoria/docs/
+```
+
+### 6. Index Your Documents
+
+```bash
+# Index all markdown files in the docs/ directory
+~/Github/thinker/memoria/main/.venv/bin/python3 << 'EOF'
+import sys, os
+sys.path.insert(0, os.path.expanduser('~/Github/thinker/memoria/main/memoria'))
+from skill_helpers import index_documents
+os.chdir(os.path.expanduser('~/Github/thinker/memoria/docs'))
+print(index_documents(pattern="**/*.md"))
+EOF
+```
+
+### 7. Test It
+
+```bash
+~/Github/thinker/memoria/main/.venv/bin/python3 << 'EOF'
 import sys
-sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
+sys.path.insert(0, os.path.expanduser('~/Github/thinker/memoria/main/memoria'))
+from skill_helpers import search_knowledge
+print(search_knowledge(query="how does memoria work", mode="hybrid", limit=5))
+EOF
+```
+
+## Repository Structure
+
+This repository uses a **bare root + worktree** layout for safe parallel development:
+
+```
+~/Github/thinker/memoria/              (bare git root)
+├── HEAD, config, objects/, refs/      (git internals - don't touch)
+├── docs/                              (PERSISTENT - RAG source documents)
+├── chroma_data/                       (PERSISTENT - ChromaDB vector data)
+├── main/                              (worktree: main branch)
+│   ├── memoria/                       (Python package - the actual code)
+│   │   ├── skill_helpers.py           (PUBLIC API - search, index, stats)
+│   │   ├── adapters/                  (ChromaDB, SentenceTransformers, etc.)
+│   │   ├── domain/                    (Entities, ports, value objects)
+│   │   └── compatibility/             (Legacy raggy facade)
+│   ├── tests/                         (Unit, integration, performance tests)
+│   ├── specs/                         (Feature specifications)
+│   ├── docs -> ../docs                (symlink to persistent docs)
+│   ├── chroma_data -> ../chroma_data  (symlink to persistent data)
+│   ├── pyproject.toml                 (Package definition)
+│   └── README.md                      (this file)
+└── <feature-worktrees>/               (temporary, safely deletable)
+    ├── docs -> ../docs                (same symlinks)
+    └── chroma_data -> ../chroma_data
+```
+
+**Why this layout?**
+- `docs/` and `chroma_data/` at the bare root are **never affected by worktree operations**
+- You can delete any worktree without losing your indexed documents or vector data
+- Feature branches get their own worktrees with symlinks to shared data
+- ChromaDB Docker container mounts `chroma_data/` at the bare root level
+
+### Creating a Feature Worktree
+
+```bash
+cd ~/Github/thinker/memoria
+git worktree add 004-configurable-embeddings origin/004-configurable-embeddings
+
+# Set up symlinks in the new worktree
+ln -sfn ../docs 004-configurable-embeddings/docs
+ln -sfn ../chroma_data 004-configurable-embeddings/chroma_data
+```
+
+## How It Works
+
+### Architecture
+
+```
+Claude Code → skill_helpers.py → Adapters → ChromaDB (Docker, port 8001)
+                                    │
+                                    ├── ChromaDBAdapter (vector store)
+                                    ├── SentenceTransformerAdapter (embeddings: all-MiniLM-L6-v2)
+                                    ├── SearchEngineAdapter (hybrid search: 95% semantic + 5% BM25)
+                                    └── DocumentProcessorAdapter (chunking: 2000 chars, 100 overlap)
+```
+
+### Search Flow
+
+1. Query text is embedded using SentenceTransformers (`all-MiniLM-L6-v2`, 384 dimensions)
+2. ChromaDB performs semantic similarity search
+3. BM25 keyword search runs in parallel
+4. Results are merged with hybrid scoring (95% semantic, 5% keyword)
+5. Top results returned with confidence scores
+
+### Indexing Flow
+
+1. Documents are chunked (2000 chars, 100 char overlap)
+2. Chunks are batch-embedded (32 at a time via SentenceTransformers)
+3. Embeddings are progressively committed to ChromaDB (every 500 chunks)
+4. Failed documents are tracked and reported without blocking the batch
+
+## API Reference
+
+### `search_knowledge(query, mode="hybrid", expand=True, limit=5)`
+
+Search the knowledge base. Returns formatted results with scores.
+
+### `index_documents(pattern="**/*.md", rebuild=False)`
+
+Index documents from `docs/` directory. Uses batch embedding for speed.
+
+### `health_check()`
+
+Check ChromaDB connection and system health.
+
+### `get_stats()`
+
+Get collection statistics (chunk count, database info).
+
+### `list_indexed_documents()`
+
+List all indexed documents organized by directory.
+
+### `add_document(file_path, reindex=True)`
+
+Add a single document to the knowledge base.
+
+## Claude Code Integration
+
+### How Claude Code Uses Memoria
+
+When a Claude Code skill named `memoria` is registered, Claude can invoke it to search your knowledge base. The skill is discovered via the symlink at `~/.claude/skills/memoria`.
+
+### Usage Pattern in Claude Code
+
+```python
+# This is how Claude Code invokes memoria internally
+import sys
+sys.path.insert(0, '/path/to/memoria/main/memoria')
 from skill_helpers import search_knowledge
 
-results = search_knowledge(
+result = search_knowledge(
     query="your search query",
-    mode="hybrid",  # semantic + BM25
-    expand=True,    # query expansion
-    limit=5
-)
-print(results)
-```
-
-### For Python Development
-
-```python
-from memoria.skill_helpers import (
-    health_check,
-    search_knowledge,
-    index_documents,
-    add_document,
-    list_indexed_documents,
-    get_stats
-)
-
-# Check system health
-health = health_check()
-print(health)
-
-# Search knowledge base
-results = search_knowledge(
-    query="memoria architecture",
     mode="hybrid",
     expand=True,
     limit=5
 )
-
-# Index markdown documents
-index_documents(pattern="**/*.md", rebuild=False)
-
-# Add single document
-add_document("/path/to/doc.md", reindex=True)
-
-# List indexed documents
-docs = list_indexed_documents()
-
-# Get statistics
-stats = get_stats()
 ```
-
-### Direct Adapter Usage
-
-For advanced use cases, you can use adapters directly:
-
-```python
-from memoria.adapters.chromadb.chromadb_adapter import ChromaDBAdapter
-from memoria.adapters.sentence_transformers.sentence_transformer_adapter import SentenceTransformerAdapter
-from memoria.adapters.search.search_engine_adapter import SearchEngineAdapter
-
-# Initialize adapters (with optional timeout for large operations)
-vector_store = ChromaDBAdapter(
-    collection_name="memoria",
-    use_http=True,
-    http_host="localhost",
-    http_port=8001,
-    timeout=60.0,  # Optional: HTTP timeout in seconds
-)
-
-embedder = SentenceTransformerAdapter(model_name="all-MiniLM-L6-v2")
-search_engine = SearchEngineAdapter(vector_store, embedder, hybrid_weight=0.95)
-
-# Perform search
-results = search_engine.search(query="your query", limit=5, mode="hybrid")
-
-for result in results:
-    print(f"Score: {result.score}")
-    print(f"Content: {result.document.content}")
-    print(f"Source: {result.document.metadata['source']}")
-```
-
-### Batch Embedding API
-
-For bulk operations, use the batch embedding API directly:
-
-```python
-from memoria.adapters.sentence_transformers.sentence_transformer_adapter import SentenceTransformerAdapter
-
-embedder = SentenceTransformerAdapter(model_name="all-MiniLM-L6-v2")
-
-# Batch embed multiple texts (much faster than sequential)
-texts = ["first document", "second document", "third document"]
-embeddings = embedder.embed_batch(texts)  # Returns list[Embedding]
-
-# Each embedding is a 384-dimensional vector
-for text, embedding in zip(texts, embeddings):
-    print(f"{text}: {embedding.dimensions}D vector")
-```
-
-## API Reference
-
-### `skill_helpers.py` - High-Level API
-
-#### `health_check() -> str`
-Returns formatted health status of RAG system, ChromaDB connection, and document count.
-
-#### `search_knowledge(query: str, mode: str = "hybrid", expand: bool = True, limit: int = 5) -> str`
-Searches the knowledge base and returns formatted results.
-
-**Parameters**:
-- `query`: Search query string
-- `mode`: "hybrid" (semantic + BM25) or "semantic" (semantic only)
-- `expand`: Enable query expansion (recommended)
-- `limit`: Maximum number of results (default: 5)
-
-**Returns**: Formatted string with search results including scores and sources
-
-#### `index_documents(pattern: str = "**/*.md", rebuild: bool = False) -> str`
-Indexes documents from `docs/` directory matching the pattern.
-
-Uses batch embedding (32 texts at a time) and progressive batching (commits every 500 chunks)
-for efficient processing of large document collections. Handles individual document failures
-gracefully - continues indexing remaining documents and reports failures in the summary.
-
-**Parameters**:
-- `pattern`: Glob pattern for files (default: all markdown files)
-- `rebuild`: If True, rebuilds entire index (not implemented yet)
-
-**Returns**: Formatted string with indexing progress, throughput, and failure summary
-
-#### `add_document(file_path: str, reindex: bool = True) -> str`
-Adds a single document to the knowledge base.
-
-**Parameters**:
-- `file_path`: Path to document file
-- `reindex`: If True, reindexes after adding
-
-**Returns**: Formatted string with status message
-
-#### `list_indexed_documents() -> str`
-Lists all documents in the knowledge base organized by directory.
-
-**Returns**: Formatted string with document list
-
-#### `get_stats() -> str`
-Returns statistics about the knowledge base.
-
-**Returns**: Formatted string with chunk count, database info, collection name
-
-## Testing
-
-### Run All Tests
-
-```bash
-# Use shared venv with absolute paths
-cd ~/Github/thinker/claude_infra/skills/memoria
-
-# Run all tests with coverage
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v --cov=memoria --cov-report=term-missing
-
-# Run only unit tests (fast)
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v -m unit
-
-# Run only integration tests (requires ChromaDB)
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v -m integration
-
-# Run with specific verbosity
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pytest tests/ -v --tb=short
-```
-
-### Test Organization
-
-```
-tests/
-├── unit/               # Fast tests, no external dependencies
-│   ├── domain/         # Entity and value object tests
-│   ├── adapters/       # Adapter logic tests (mocked)
-│   └── compatibility/  # Facade tests
-├── integration/        # Tests requiring real services
-│   ├── chromadb/       # ChromaDB integration tests
-│   ├── embeddings/     # Sentence transformers tests
-│   └── search/         # End-to-end search tests
-└── conftest.py         # Shared fixtures
-```
-
-### Current Test Status
-
-- **Total Tests**: 185
-- **Passing**: 159 (88%)
-- **Failures**: 12 (MCP-specific, expected)
-- **Errors**: 18 (Application layer, low priority)
-
-## Configuration
-
-### ChromaDB Connection
-
-Edit `memoria/skill_helpers.py` to change ChromaDB connection:
-
-```python
-_vector_store = ChromaDBAdapter(
-    collection_name="memoria",  # Collection name
-    use_http=True,               # HTTP mode for Docker
-    http_host="localhost",       # Docker host
-    http_port=8001,              # ChromaDB port
-)
-```
-
-### Embedding Model
-
-Change the model in `skill_helpers.py`:
-
-```python
-_embedder = SentenceTransformerAdapter(
-    model_name="all-MiniLM-L6-v2"  # Fast, 384 dimensions
-    # Alternative: "all-mpnet-base-v2" (slower, 768 dimensions, better quality)
-)
-```
-
-### Search Configuration
-
-Adjust hybrid search weights:
-
-```python
-_search_engine = SearchEngineAdapter(
-    _vector_store,
-    _embedder,
-    hybrid_weight=0.7  # 70% semantic, 30% BM25
-    # Range: 0.0 (pure BM25) to 1.0 (pure semantic)
-)
-```
-
-### Document Processing
-
-Configure chunking in `skill_helpers.py`:
-
-```python
-_document_processor = DocumentProcessorAdapter(
-    chunk_size=1000,    # Characters per chunk
-    chunk_overlap=200   # Overlap between chunks
-)
-```
-
-## Development
-
-### Code Style
-
-This project uses:
-- **Black**: Code formatting (line length: 100)
-- **isort**: Import sorting
-- **ruff**: Linting
-- **mypy**: Type checking (strict mode)
-
-```bash
-# Format code
-black memoria/ tests/
-
-# Sort imports
-isort memoria/ tests/
-
-# Lint
-ruff check memoria/ tests/
-
-# Type check
-mypy memoria/
-```
-
-### Pre-commit Checks
-
-```bash
-# Install pre-commit hooks (optional)
-pip install pre-commit
-pre-commit install
-
-# Run all checks manually
-pre-commit run --all-files
-```
-
-### Adding New Adapters
-
-1. Create adapter in `memoria/adapters/{name}/`
-2. Implement domain port interface
-3. Add tests in `tests/unit/adapters/{name}/`
-4. Update `skill_helpers.py` if needed
-5. Document in this README
-
-### Phase 3 Migration (Future)
-
-⚠️ **Do NOT implement Phase 3 yet**. Phase 2 is stable and production-ready. Phase 3 is planned but not approved.
-
-## Troubleshooting
-
-### ChromaDB Connection Issues
-
-```bash
-# Check ChromaDB is running
-docker ps | grep chroma
-
-# Check ChromaDB port
-lsof -i :8001
-
-# Test connection
-curl http://localhost:8001/api/v1/heartbeat
-```
-
-### Import Errors
-
-```bash
-# Reinstall using shared venv
-cd ~/Github/thinker/claude_infra/skills/memoria
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/pip install -e .
-
-# Check Python path
-/Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python -c "import sys; print('\n'.join(sys.path))"
-```
-
-### Test Failures
-
-```bash
-# Run with verbose output
-pytest tests/ -vv --tb=long
-
-# Run specific test
-pytest tests/unit/domain/test_entities.py::test_document_creation -v
-
-# Skip slow tests
-pytest tests/ -v -m "not slow"
-```
-
-### Performance Issues
-
-```bash
-# Check embedding model cache
-ls -lh ~/.cache/huggingface/hub/
-
-# Monitor memory usage
-ps aux | grep python
-
-# Profile search performance
-python -m cProfile -s cumtime -m pytest tests/integration/
-```
-
-## Migration from MCP
-
-### Before (MCP Architecture)
-
-```
-Claude Code → HTTP Bridge → Facade → MCP Server (Docker) → Redis → ChromaDB
-```
-
-**Issues**:
-- Heavy memory footprint (~700MB+)
-- High token usage (~150,000 tokens)
-- Multiple failure points
-- Complex debugging
-
-### After (Skill Architecture)
-
-```
-Claude Code → skill_helpers.py → Adapters → ChromaDB
-```
-
-**Benefits**:
-- Lightweight (~150MB)
-- Low token usage (~2,000 tokens, 98.7% reduction)
-- Direct execution
-- Simple debugging
-
-### Migration Steps
-
-1. ✅ Create skills infrastructure
-2. ✅ Port Phase 2 architecture (domain/adapters/tests)
-3. ✅ Build skill helpers API
-4. ✅ Create skill definition (~/.claude/skills/memoria.md)
-5. ✅ Run comprehensive tests (159/177 passing)
-6. ✅ Side-by-side validation (skill working, MCP not available)
-7. ✅ Create documentation (this file)
-8. ⏳ Update CLAUDE.md with skills guidance
-9. ⏳ Monitor production usage
-10. ⏳ Deprecate MCP infrastructure (after validation period)
-
-## Performance Characteristics
-
-### Search Performance (18K+ chunks, hybrid mode)
-
-| Metric | Value | Target |
-|--------|-------|--------|
-| Mean query latency | ~25ms | <2,000ms (SC-004) |
-| P99 query latency | ~30ms | <2,000ms |
-| Results per query | 10 | ≥5 (SC-001) |
-| High-relevance score | 0.71-0.80 | ≥0.70 (SC-003) |
-| Hybrid weight | 0.95 | 95% semantic, 5% BM25 |
-
-### Indexing Performance (batch embedding + progressive batching)
-
-| Metric | Value | Target |
-|--------|-------|--------|
-| Throughput | >20 docs/min | ≥20 docs/min (SC-005) |
-| Timeout rate | 0% | 0% (SC-003) |
-| Batch commit size | 500 chunks | Progressive commits |
-| Embedding batch size | 32 texts | SentenceTransformer native |
-| Peak memory | <2GB | <2GB (SC-007) |
-
-### Scaling Limits
-
-| Dimension | Tested | Notes |
-|-----------|--------|-------|
-| Collection size | 18,004 chunks | Works well, no degradation |
-| Document count | 2,000+ | Production validated |
-| Single doc size | Up to 5MB | Chunked into 2KB pieces |
-| Batch indexing | 100 docs | No timeouts |
-| Concurrent queries | 10 users | <3s each |
-
-### Response Times
-
-| Operation | Time |
-|-----------|------|
-| health_check() | < 1s |
-| list_indexed_documents() | < 1s |
-| search_knowledge() | < 1s |
-| get_stats() | < 1s |
-| index_documents() (3 files, 645 chunks) | 5-10s |
-
-### Memory Footprint
-
-| Component | Memory |
-|-----------|--------|
-| Python process | ~150-200MB |
-| MCP equivalent (for comparison) | ~700MB+ |
-
-### Token Usage
-
-| Component | Tokens |
-|-----------|--------|
-| Skill definition (one-time) | ~500 |
-| MCP tool descriptions (per session) | ~2,000-3,000 |
-| Savings per session | ~1,500-2,500 |
 
 ### Debug Logging
 
-Set `MEMORIA_DEBUG=1` to enable performance logging:
+Set `MEMORIA_DEBUG=1` to see performance metrics:
 
 ```bash
-MEMORIA_DEBUG=1 python -c "from memoria.skill_helpers import search_knowledge; search_knowledge('test')"
-# Output: [PERF] semantic_search: embed=15.2ms, chromadb=8.1ms, results=10
-#         [PERF] hybrid_search: total=45.3ms, semantic_count=10, keyword_count=10, final_count=5
-#         [PERF] search_knowledge: query_time=46.1ms, results=5, mode=hybrid, limit=5
+MEMORIA_DEBUG=1 python3 -c "
+import sys; sys.path.insert(0, 'memoria')
+from skill_helpers import search_knowledge
+search_knowledge('test query')
+"
+# [PERF] semantic_search: embed=15ms, chromadb=8ms
+# [PERF] hybrid_search: total=45ms
+# [PERF] search_knowledge: query_time=46ms, results=5
 ```
 
-## Contributing
+## Configuration
 
-### Reporting Issues
+All configuration is currently hardcoded in `memoria/skill_helpers.py`. Planned: env var overrides (spec 004).
 
-File issues at: `~/Github/thinker/claude_infra/issues/` (or GitHub issues if available)
+| Setting | Value | Location |
+|---------|-------|----------|
+| ChromaDB host | `localhost` | `skill_helpers.py:76` |
+| ChromaDB port | `8001` | `skill_helpers.py:77` |
+| Collection name | `"memoria"` | `skill_helpers.py:74` |
+| Embedding model | `all-MiniLM-L6-v2` | `skill_helpers.py:80` |
+| Hybrid weight | `0.95` (95% semantic) | `skill_helpers.py:81` |
+| Chunk size | `2000` chars | `skill_helpers.py:82` |
+| Chunk overlap | `100` chars | `skill_helpers.py:82` |
+| Batch commit size | `500` chunks | `skill_helpers.py:142` |
+| Embedding batch | `32` texts | SentenceTransformer native |
 
-Include:
-- Python version (`python --version`)
-- Operating system
-- Error messages with full traceback
-- Steps to reproduce
+## Performance
 
-### Pull Request Guidelines
+| Metric | Value |
+|--------|-------|
+| Search latency (mean) | ~25ms |
+| Search latency (P99) | ~30ms |
+| Results per query | 10 |
+| Indexing throughput | >20 docs/min |
+| Timeout rate | 0% |
+| Memory footprint | ~150-200MB |
+| Collection size tested | 18,004 chunks |
 
-1. Create feature branch from `main`
-2. Write tests for new functionality
-3. Ensure all tests pass (`pytest tests/ -v`)
-4. Run code quality checks (`black`, `isort`, `ruff`, `mypy`)
-5. Update documentation (this README, docstrings)
-6. Create PR with clear description
+## Troubleshooting
+
+### ChromaDB not responding
+
+```bash
+# Check container is running
+docker ps | grep chroma
+
+# Check port is available
+curl http://localhost:8001/api/v1/heartbeat
+
+# Restart container
+docker restart memoria-chromadb
+```
+
+### Import errors
+
+```bash
+# Reinstall in editable mode
+~/path/to/.venv/bin/pip install -e ~/Github/thinker/memoria/main/
+```
+
+### Empty search results
+
+```bash
+# Check if documents are indexed
+python3 -c "
+import sys; sys.path.insert(0, 'memoria')
+from skill_helpers import get_stats
+print(get_stats())
+"
+# If chunk count is 0, run index_documents()
+```
+
+## Specs & Roadmap
+
+| Spec | Status | Description |
+|------|--------|-------------|
+| 001-chroma-search-fix | Archived | Improved hybrid search confidence (0.54 -> 0.80) |
+| 002-memoria-performance | Complete | Batch embedding, progressive indexing, perf logging |
+| 003-memoria-plugin-install | Planned | Automated curl installer for one-command setup |
+| 004-configurable-embeddings | Future | Configurable embedding models via Ollama (fix score range) |
 
 ## License
 
-Part of Claude Infrastructure Management system.
-
-## Authors
-
-- **Initial MCP Version**: Igor Candido
-- **Phase 2 Onion Architecture**: Igor Candido + Claude
-- **Skill Migration**: Igor Candido + Claude
-
-## See Also
-
-- **Skill Definition**: `~/.claude/skills/memoria.md` - Usage guide for Claude Code
-- **Skill Usage Guide**: `SKILL_USAGE.md` - Detailed usage patterns and examples
-- **Migration Docs**: `MIGRATION_v3.0.0_COMPLETE.md` - Phase 2 migration details
-- **Infrastructure Docs**: `~/Github/thinker/claude_infra/CLAUDE.md` - Overall infrastructure
-- **Skills Overview**: `~/Github/thinker/claude_infra/skills/README.md` - Skills system documentation
-
-## Changelog
-
-### v3.1.0 (2026-02-11) - Performance Optimization
-- Batch embedding API for 20-30x faster indexing
-- Progressive batching (commits every 500 chunks) prevents timeouts
-- Graceful failure handling - continues indexing on individual doc failures
-- ProgressTracker entity for indexing progress monitoring
-- Configurable HTTP timeout for ChromaDB adapter
-- Performance logging (MEMORIA_DEBUG=1) for search and indexing
-- Performance regression test suite (tests/performance/)
-- Comprehensive performance documentation
-
-### v3.0.0 (2025-11-18) - Skill Migration
-- ✅ Converted from MCP to lightweight skill
-- ✅ Created high-level API with Rich formatting
-- ✅ Preserved Phase 2 onion architecture
-- ✅ 159/185 tests passing (88%)
-- ✅ Side-by-side validation complete
-- ✅ Production-ready status achieved
-
-### v2.0.0 (2025-09-30) - Phase 2 Onion Architecture
-- Implemented domain-driven design
-- Created immutable entities and value objects
-- Built adapter layer for ChromaDB and Sentence Transformers
-- Full test coverage (185 tests)
-- Compatibility facade for legacy code
-
-### v1.0.0 - Initial MCP Server
-- Basic RAG functionality
-- ChromaDB integration
-- FastMCP server implementation
+Private repository - Igor Candido

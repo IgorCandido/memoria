@@ -29,8 +29,10 @@ htmlcov/
 *.swo
 *~
 
-# ChromaDB data (local development only)
+# Persistent data (lives at bare root, symlinked into worktrees)
 chroma_data/
+docs/
+chroma_data.backup*/
 
 # Logs
 *.log
