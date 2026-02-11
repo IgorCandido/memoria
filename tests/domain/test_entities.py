@@ -2,7 +2,7 @@
 
 import pytest
 
-from memoria.domain.entities import Chunk, Document, SearchResult
+from memoria.domain.entities import Chunk, Document, ProgressTracker, SearchResult
 
 
 class TestDocument:
@@ -130,3 +130,74 @@ class TestChunk:
         chunk = Chunk(text="test", start_pos=0, end_pos=10, metadata={})
         with pytest.raises(AttributeError):
             chunk.text = "modified"  # type: ignore[misc]
+
+
+class TestProgressTracker:
+    """Tests for ProgressTracker entity."""
+
+    def test_initialization(self) -> None:
+        tracker = ProgressTracker(total_documents=10)
+        assert tracker.total_documents == 10
+        assert tracker.processed_documents == 0
+        assert tracker.failed_documents == 0
+        assert tracker.current_document == ""
+        assert tracker.end_time is None
+        assert not tracker.is_complete
+
+    def test_negative_total_raises_error(self) -> None:
+        with pytest.raises(ValueError, match="non-negative"):
+            ProgressTracker(total_documents=-1)
+
+    def test_zero_total_is_valid(self) -> None:
+        tracker = ProgressTracker(total_documents=0)
+        assert tracker.is_complete
+
+    def test_mark_processed(self) -> None:
+        tracker = ProgressTracker(total_documents=3)
+        tracker.mark_processed("doc1.md")
+        assert tracker.processed_documents == 1
+        assert tracker.current_document == "doc1.md"
+
+    def test_mark_failed(self) -> None:
+        tracker = ProgressTracker(total_documents=3)
+        tracker.mark_failed("bad.md", "parse error")
+        assert tracker.processed_documents == 1
+        assert tracker.failed_documents == 1
+        assert tracker.failed_files == [("bad.md", "parse error")]
+
+    def test_success_count(self) -> None:
+        tracker = ProgressTracker(total_documents=5)
+        tracker.mark_processed("a.md")
+        tracker.mark_processed("b.md")
+        tracker.mark_failed("c.md", "error")
+        assert tracker.success_count == 2
+
+    def test_is_complete(self) -> None:
+        tracker = ProgressTracker(total_documents=2)
+        assert not tracker.is_complete
+        tracker.mark_processed("a.md")
+        assert not tracker.is_complete
+        tracker.mark_processed("b.md")
+        assert tracker.is_complete
+
+    def test_is_complete_with_failures(self) -> None:
+        tracker = ProgressTracker(total_documents=2)
+        tracker.mark_processed("a.md")
+        tracker.mark_failed("b.md", "error")
+        assert tracker.is_complete
+
+    def test_elapsed_seconds(self) -> None:
+        tracker = ProgressTracker(total_documents=1)
+        tracker.mark_processed("a.md")
+        tracker.finish()
+        assert tracker.elapsed_seconds >= 0
+
+    def test_docs_per_minute_zero_elapsed(self) -> None:
+        tracker = ProgressTracker(total_documents=1)
+        assert tracker.docs_per_minute == 0.0 or tracker.docs_per_minute > 0
+
+    def test_finish_sets_end_time(self) -> None:
+        tracker = ProgressTracker(total_documents=1)
+        assert tracker.end_time is None
+        tracker.finish()
+        assert tracker.end_time is not None

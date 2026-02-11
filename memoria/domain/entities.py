@@ -6,6 +6,7 @@ and ensure thread safety.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 
@@ -86,3 +87,56 @@ class Chunk:
     def overlaps(self, other: "Chunk") -> bool:
         """Check if this chunk overlaps with another chunk."""
         return not (self.end_pos <= other.start_pos or self.start_pos >= other.end_pos)
+
+
+class ProgressTracker:
+    """
+    Tracks progress of long-running indexing operations.
+
+    Mutable by design - tracks state changes during indexing.
+    Not a frozen dataclass since it needs to update progress counters.
+    """
+
+    def __init__(self, total_documents: int) -> None:
+        if total_documents < 0:
+            raise ValueError(f"Total documents must be non-negative, got {total_documents}")
+        self.total_documents = total_documents
+        self.processed_documents = 0
+        self.failed_documents = 0
+        self.failed_files: list[tuple[str, str]] = []  # (filename, error_message)
+        self.current_document = ""
+        self.start_time = datetime.now()
+        self.end_time: Optional[datetime] = None
+
+    @property
+    def is_complete(self) -> bool:
+        return (self.processed_documents + self.failed_documents) >= self.total_documents
+
+    @property
+    def success_count(self) -> int:
+        return self.processed_documents - self.failed_documents
+
+    @property
+    def elapsed_seconds(self) -> float:
+        end = self.end_time or datetime.now()
+        return (end - self.start_time).total_seconds()
+
+    @property
+    def docs_per_minute(self) -> float:
+        elapsed = self.elapsed_seconds
+        if elapsed < 0.001:
+            return 0.0
+        return (self.processed_documents / elapsed) * 60.0
+
+    def mark_processed(self, filename: str) -> None:
+        self.processed_documents += 1
+        self.current_document = filename
+
+    def mark_failed(self, filename: str, error: str) -> None:
+        self.processed_documents += 1
+        self.failed_documents += 1
+        self.failed_files.append((filename, error))
+        self.current_document = filename
+
+    def finish(self) -> None:
+        self.end_time = datetime.now()

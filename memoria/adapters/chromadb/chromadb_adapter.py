@@ -30,6 +30,7 @@ class ChromaDBAdapter:
         use_http: bool = False,
         http_host: str = "localhost",
         http_port: int = 8000,
+        timeout: Optional[float] = None,
     ) -> None:
         """
         Initialize ChromaDB adapter.
@@ -40,16 +41,22 @@ class ChromaDBAdapter:
             use_http: Whether to use HTTP client (True) or persistent client (False)
             http_host: Hostname for HTTP client
             http_port: Port for HTTP client
+            timeout: HTTP request timeout in seconds (None for default)
         """
         self.collection_name = collection_name
         self.use_http = use_http
+
+        # Build settings with optional timeout
+        settings_kwargs: dict = {"anonymized_telemetry": False}
+        if timeout is not None:
+            settings_kwargs["chroma_server_http_timeout"] = timeout
 
         # Create appropriate client
         if use_http:
             self._client: ClientAPI = chromadb.HttpClient(
                 host=http_host,
                 port=http_port,
-                settings=Settings(anonymized_telemetry=False),
+                settings=Settings(**settings_kwargs),
             )
         else:
             if db_path is None:
@@ -64,6 +71,10 @@ class ChromaDBAdapter:
             name=collection_name,
             metadata={"description": "Memoria document embeddings"},
         )
+
+    def get_collection(self):
+        """Return the underlying ChromaDB collection for direct access."""
+        return self._collection
 
     def add_documents(self, docs: list[Document]) -> None:
         """

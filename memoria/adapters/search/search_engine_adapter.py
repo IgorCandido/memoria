@@ -5,9 +5,8 @@ Provides semantic search, BM25 keyword search, and hybrid search capabilities.
 Includes query expansion and result reranking.
 """
 
-from collections import defaultdict
-import re
-from typing import Optional
+import os
+import time
 
 from memoria.domain.entities import Document, SearchResult
 from memoria.domain.ports.search_engine import SearchEnginePort
@@ -77,13 +76,21 @@ class SearchEngineAdapter:
     def _semantic_search(self, query: str, limit: int) -> list[SearchResult]:
         """Perform semantic vector similarity search."""
         # Generate query embedding
+        t0 = time.time()
         query_embedding = self._embedder.embed_text(query)
+        embed_ms = (time.time() - t0) * 1000
 
         # Search vector store
+        t1 = time.time()
         results = self._vector_store.search(
             query_embedding=query_embedding.vector,
             k=limit,
         )
+        search_ms = (time.time() - t1) * 1000
+
+        if os.getenv("MEMORIA_DEBUG"):
+            print(f"[PERF] semantic_search: embed={embed_ms:.1f}ms, "
+                  f"chromadb={search_ms:.1f}ms, results={len(results)}")
 
         return results
 
@@ -139,6 +146,8 @@ class SearchEngineAdapter:
 
         Combines scores using weighted average.
         """
+        t0 = time.time()
+
         # Get semantic results
         semantic_results = self._semantic_search(query, limit * 2)
 
@@ -175,7 +184,7 @@ class SearchEngineAdapter:
         hybrid_results.sort(key=lambda x: x[1], reverse=True)
 
         # Create SearchResult objects
-        return [
+        final_results = [
             SearchResult(
                 document=doc,
                 score=score,
@@ -183,6 +192,15 @@ class SearchEngineAdapter:
             )
             for i, (doc, score) in enumerate(hybrid_results[:limit])
         ]
+
+        if os.getenv("MEMORIA_DEBUG"):
+            hybrid_ms = (time.time() - t0) * 1000
+            print(f"[PERF] hybrid_search: total={hybrid_ms:.1f}ms, "
+                  f"semantic_count={len(semantic_results)}, "
+                  f"keyword_count={len(keyword_results)}, "
+                  f"final_count={len(final_results)}")
+
+        return final_results
 
     def expand_query(self, query: str) -> QueryTerms:
         """

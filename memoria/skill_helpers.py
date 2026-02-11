@@ -1,8 +1,6 @@
 """Skill Helpers - High-Level API for Claude Code"""
 
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 import io
 
 # Try to import rich, but provide fallbacks if not available
@@ -87,8 +85,18 @@ def _get_adapters():
 
 
 def search_knowledge(query, mode="hybrid", expand=True, limit=5):
+    import time as _time
+    import os as _os
+
     vector_store, embedder, search_engine, _ = _get_adapters()
+
+    _perf_start = _time.time()
     results = search_engine.search(query=query, limit=limit, mode="hybrid" if mode == "hybrid" else "semantic")
+    _perf_elapsed = (_time.time() - _perf_start) * 1000  # ms
+
+    if _os.getenv("MEMORIA_DEBUG"):
+        print(f"[PERF] search_knowledge: query_time={_perf_elapsed:.1f}ms, "
+              f"results={len(results)}, mode={mode}, limit={limit}")
 
     console = Console(file=io.StringIO(), force_terminal=False, width=120)
     console.print(f"\n[bold cyan]📚 Search Results for \"{query}\"[/bold cyan]\n")
@@ -118,13 +126,21 @@ def index_documents(pattern="**/*.md", rebuild=False):
     """
     Index documents from the docs folder into ChromaDB.
 
-    NOTE: Partial/incremental indexing is not yet supported (Phase 4 feature).
-    Currently always re-indexes all matching documents.
+    Uses batch embedding for efficient processing and progressive batching
+    to commit chunks to ChromaDB every COMMIT_BATCH_SIZE chunks, preventing
+    timeouts and memory exhaustion with large collections.
+
+    Handles individual document failures gracefully - continues indexing
+    remaining documents and reports failures in the summary.
 
     Args:
         pattern: Glob pattern for documents to index (default: "**/*.md")
         rebuild: Ignored for now - always rebuilds (Phase 4 will implement this)
     """
+    from memoria.domain.entities import Document, ProgressTracker
+
+    COMMIT_BATCH_SIZE = 500  # Commit to ChromaDB every N chunks (balances memory vs commit overhead)
+
     vector_store, embedder, _, doc_processor = _get_adapters()
     console = Console(file=io.StringIO(), force_terminal=False, width=120)
 
@@ -135,37 +151,54 @@ def index_documents(pattern="**/*.md", rebuild=False):
             return console.file.getvalue()
 
         console.print(f"Found {len(docs_list)} documents")
+        tracker = ProgressTracker(total_documents=len(docs_list))
 
-        # Note: Partial indexing will be implemented in Phase 4
-        # For now, always process all documents
+        pending_chunks = []  # Chunks waiting for embedding + commit
+        total_chunks_committed = 0
 
-        all_documents = []
         for i, doc_path in enumerate(docs_list, 1):
+            tracker.current_document = doc_path.name
             console.print(f"[{i}/{len(docs_list)}] Processing {doc_path.name}...")
-            # process_document expects Path object and returns list[Document]
-            documents_without_embeddings = doc_processor.process_document(doc_path)
 
-            # Generate embeddings and create new Documents (frozen dataclass - can't modify after creation)
-            for doc in documents_without_embeddings:
-                embedding = embedder.embed_text(doc.content)
-                # Create new Document with embedding at construction time
-                from memoria.domain.entities import Document
-                new_doc = Document(
-                    id=doc.id,
-                    content=doc.content,
-                    embedding=embedding.to_list(),  # Convert Embedding value object to list[float]
-                    metadata=doc.metadata
+            try:
+                documents_without_embeddings = doc_processor.process_document(doc_path)
+                pending_chunks.extend(documents_without_embeddings)
+                tracker.mark_processed(doc_path.name)
+            except Exception as doc_err:
+                tracker.mark_failed(doc_path.name, str(doc_err))
+                console.print(f"[yellow]⚠️  Skipped {doc_path.name}: {doc_err}[/yellow]")
+                continue
+
+            # Progressive batching: commit when we have enough chunks
+            if len(pending_chunks) >= COMMIT_BATCH_SIZE:
+                committed = _embed_and_commit_batch(
+                    pending_chunks, embedder, vector_store, console
                 )
-                all_documents.append(new_doc)
+                total_chunks_committed += committed
+                pending_chunks = []
 
-        console.print(f"Generated {len(all_documents)} document chunks")
-        console.print("Adding to database...")
-        vector_store.add_documents(all_documents)
+        # Commit remaining chunks
+        if pending_chunks:
+            committed = _embed_and_commit_batch(
+                pending_chunks, embedder, vector_store, console
+            )
+            total_chunks_committed += committed
+
+        tracker.finish()
+        elapsed = tracker.elapsed_seconds
+        throughput = tracker.docs_per_minute
 
         console.print("✓ Build complete\n")
         console.print("[bold green]✅ Indexing Complete[/bold green]\n")
-        console.print(f"[cyan]Documents:[/cyan] {len(docs_list)}")
-        console.print(f"[cyan]Chunks:[/cyan] {len(all_documents)}")
+        console.print(f"[cyan]Documents:[/cyan] {tracker.processed_documents}")
+        console.print(f"[cyan]Chunks:[/cyan] {total_chunks_committed}")
+        console.print(f"[cyan]Throughput:[/cyan] {throughput:.1f} docs/min")
+        console.print(f"[cyan]Duration:[/cyan] {elapsed:.1f}s")
+
+        if tracker.failed_documents > 0:
+            console.print(f"\n[yellow]⚠️  Failed documents ({tracker.failed_documents}):[/yellow]")
+            for filename, error in tracker.failed_files:
+                console.print(f"[yellow]  - {filename}: {error}[/yellow]")
 
     except Exception as e:
         console.print(f"[red]❌ Failed: {e}[/red]")
@@ -173,6 +206,56 @@ def index_documents(pattern="**/*.md", rebuild=False):
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
     return console.file.getvalue()
+
+
+def _embed_and_commit_batch(chunks, embedder, vector_store, console):
+    """
+    Embed a batch of document chunks and commit them to ChromaDB.
+
+    Uses batch embedding API for efficient processing.
+
+    Args:
+        chunks: List of Document objects without embeddings
+        embedder: SentenceTransformerAdapter instance
+        vector_store: ChromaDBAdapter instance
+        console: Console for logging
+
+    Returns:
+        Number of chunks successfully committed
+    """
+    from memoria.domain.entities import Document
+
+    if not chunks:
+        return 0
+
+    console.print(f"  Embedding {len(chunks)} chunks...")
+
+    try:
+        # Extract texts for batch embedding
+        texts = [doc.content for doc in chunks]
+
+        # Use batch embedding API (much faster than sequential)
+        embeddings = embedder.embed_batch(texts)
+
+        # Create Document objects with embeddings
+        docs_with_embeddings = []
+        for doc, embedding in zip(chunks, embeddings):
+            new_doc = Document(
+                id=doc.id,
+                content=doc.content,
+                embedding=embedding.to_list(),
+                metadata=doc.metadata,
+            )
+            docs_with_embeddings.append(new_doc)
+
+        console.print(f"  Committing {len(docs_with_embeddings)} chunks to database...")
+        vector_store.add_documents(docs_with_embeddings)
+
+        return len(docs_with_embeddings)
+
+    except Exception as e:
+        console.print(f"[red]⚠️  Batch commit failed ({len(chunks)} chunks): {e}[/red]")
+        return 0
 
 
 def add_document(file_path, reindex=True):
