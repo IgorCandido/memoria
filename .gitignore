@@ -30,9 +30,16 @@ htmlcov/
 *~
 
 # Persistent data (lives at bare root, symlinked into worktrees)
-chroma_data/
-docs/
+chroma_data
+docs
 chroma_data.backup*/
+
+# Session state (per-worktree, not shared)
+UserContext.md
+contexts/
+
+# Utility scripts (local dev only)
+rebuild_batched.py
 
 # Logs
 *.log
