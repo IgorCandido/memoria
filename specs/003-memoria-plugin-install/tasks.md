@@ -19,14 +19,14 @@
 
 **Purpose**: Create installer directory structure, shell library foundation, and shared utilities
 
-- [ ] T001 Create installer directory structure: `installer/`, `installer/lib/`, `installer/templates/`, `installer/tests/unit/`, `installer/tests/integration/`
-- [ ] T002 [P] Create `installer/lib/common.sh` — logging functions (log_info, log_warning, log_error, log_step), die(), color codes, OS/arch detection, disk space check, required command verification
-- [ ] T003 [P] Create `installer/lib/version.sh` — parse_semver(), validate_semver(), compare_versions(), is_newer(), is_older(), normalize_version(), read_version_file()
-- [ ] T004 [P] Create `installer/lib/python-check.sh` — find_python(), get_python_version(), check_python_version() (validates 3.11+), get_python_install_instructions() (macOS/Linux aware)
-- [ ] T005 [P] Create `installer/lib/shell-detect.sh` — detect_shell() (bash/zsh), get_shell_config_file(), add_source_line(), remove_source_line(), validate_source_line() (block dangerous metacharacters)
-- [ ] T006 [P] Create `installer/lib/download.sh` — network connectivity check (5s timeout), get_latest_version() (via `gh api`), download_file() (retry logic, 3 attempts, exponential backoff), compute_sha256() (cross-platform: sha256sum/shasum/openssl), verify_checksum(), version cache read/write (1-hour TTL in `${TMPDIR}`)
-- [ ] T007 [P] Create `installer/lib/docker-setup.sh` — check_docker_running(), check_container_exists(), start_chromadb_container() (named `memoria-chromadb`, port 8001:8000, volume at install path), stop_chromadb_container(), wait_for_chromadb_healthy() (TCP probe, 30s timeout)
-- [ ] T008 Create `installer/tests/unit/run-all-tests.sh` — test runner that sources each test file and reports pass/fail
+- [x] T001 Create installer directory structure: `installer/`, `installer/lib/`, `installer/templates/`, `installer/tests/unit/`, `installer/tests/integration/`
+- [x] T002 [P] Create `installer/lib/common.sh` — logging functions (log_info, log_warning, log_error, log_step), die(), color codes, OS/arch detection, disk space check, required command verification
+- [x] T003 [P] Create `installer/lib/version.sh` — parse_semver(), validate_semver(), compare_versions(), is_newer(), is_older(), normalize_version(), read_version_file()
+- [x] T004 [P] Create `installer/lib/python-check.sh` — find_python(), get_python_version(), check_python_version() (validates 3.11+), get_python_install_instructions() (macOS/Linux aware)
+- [x] T005 [P] Create `installer/lib/shell-detect.sh` — detect_shell() (bash/zsh), get_shell_config_file(), add_source_line(), remove_source_line(), validate_source_line() (block dangerous metacharacters)
+- [x] T006 [P] Create `installer/lib/download.sh` — network connectivity check (5s timeout), get_latest_version() (via `gh api`), download_file() (retry logic, 3 attempts, exponential backoff), compute_sha256() (cross-platform: sha256sum/shasum/openssl), verify_checksum(), version cache read/write (1-hour TTL in `${TMPDIR}`)
+- [x] T007 [P] Create `installer/lib/docker-setup.sh` — check_docker_running(), check_container_exists(), start_chromadb_container() (named `memoria-chromadb`, port 8001:8000, volume at install path), stop_chromadb_container(), wait_for_chromadb_healthy() (TCP probe, 30s timeout)
+- [x] T008 Create `installer/tests/unit/run-all-tests.sh` — test runner that sources each test file and reports pass/fail
 
 **Checkpoint**: All shell libraries exist and are individually sourceable without errors
 
@@ -38,10 +38,10 @@
 
 **⚠️ CRITICAL**: No installer scripts can be built until libraries are tested
 
-- [ ] T009 [P] Create `installer/tests/unit/test-version.sh` — test parse_semver (valid/invalid inputs), compare_versions (equal, newer, older, pre-release), normalize_version (partial versions, v-prefix)
-- [ ] T010 [P] Create `installer/tests/unit/test-common.sh` — test logging output, die() exit behavior, OS detection, command verification
-- [ ] T011 [P] Create `installer/tests/unit/test-download.sh` — test compute_sha256 (known hash), verify_checksum (match/mismatch), version cache TTL logic (fresh/stale)
-- [ ] T012 [P] Create `installer/tests/unit/test-shell-detect.sh` — test detect_shell(), validate_source_line() (block semicolons, pipes, backticks, $()), add/remove_source_line idempotency
+- [x] T009 [P] Create `installer/tests/unit/test-version.sh` — test parse_semver (valid/invalid inputs), compare_versions (equal, newer, older, pre-release), normalize_version (partial versions, v-prefix)
+- [x] T010 [P] Create `installer/tests/unit/test-common.sh` — test logging output, die() exit behavior, OS detection, command verification
+- [x] T011 [P] Create `installer/tests/unit/test-download.sh` — test compute_sha256 (known hash), verify_checksum (match/mismatch), version cache TTL logic (fresh/stale)
+- [x] T012 [P] Create `installer/tests/unit/test-shell-detect.sh` — test detect_shell(), validate_source_line() (block semicolons, pipes, backticks, $()), add/remove_source_line idempotency
 
 **Checkpoint**: All shell library tests pass. Foundation ready — installer scripts can now be built.
 
@@ -55,12 +55,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Create `installer/install.sh` — Stage 1 bootstrap: validate prerequisites (Python 3.11+ via python-check.sh, Docker via docker-setup.sh, `gh auth status`), download Stage 2 and libs via `gh` to `~/.local/share/memoria/`, run Stage 2. Exit codes per contract (0-3).
-- [ ] T014 [US1] Create `installer/memoria-install.sh` install command — Stage 2: clone repo via `gh repo clone` to `~/.local/share/memoria/repo/`, create venv (`python3 -m venv`), `pip install -e .`, start ChromaDB container via docker-setup.sh, create skill symlink `~/.claude/skills/memoria → ~/.local/share/memoria/repo/`, run health check, write `~/.local/share/memoria/config.json` (InstalledVersion entity from data-model.md). Exit codes per contract (0-5).
-- [ ] T015 [US1] Create `installer/templates/shell-function.sh` — shell function template for `memoria` command dispatching to update/check/health/version/uninstall subcommands. Sources `~/.local/share/memoria/lib/common.sh` for utilities.
-- [ ] T016 [US1] Add shell integration to Stage 2 installer — after successful install, detect shell via shell-detect.sh, create `~/.local/share/memoria/shell-init.sh`, add source line to user's shell RC file (.zshrc/.bashrc)
-- [ ] T017 [US1] Handle re-install scenario in `installer/memoria-install.sh` — detect existing `~/.local/share/memoria/config.json`, prompt user to reinstall or update, back up existing installation before overwrite
-- [ ] T018 [US1] Create `installer/tests/integration/test-install.sh` — end-to-end install test using temp directory override (MEMORIA_INSTALL_DIR env var), verify: directory structure exists, venv works, skill symlink valid, config.json written with correct schema
+- [x] T013 [US1] Create `installer/install.sh` — Stage 1 bootstrap: validate prerequisites (Python 3.11+ via python-check.sh, Docker via docker-setup.sh, `gh auth status`), download Stage 2 and libs via `gh` to `~/.local/share/memoria/`, run Stage 2. Exit codes per contract (0-3).
+- [x] T014 [US1] Create `installer/memoria-install.sh` install command — Stage 2: clone repo via `gh repo clone` to `~/.local/share/memoria/repo/`, create venv (`python3 -m venv`), `pip install -e .`, start ChromaDB container via docker-setup.sh, create skill symlink `~/.claude/skills/memoria → ~/.local/share/memoria/repo/`, run health check, write `~/.local/share/memoria/config.json` (InstalledVersion entity from data-model.md). Exit codes per contract (0-5).
+- [x] T015 [US1] Create `installer/templates/shell-function.sh` — shell function template for `memoria` command dispatching to update/check/health/version/uninstall subcommands. Sources `~/.local/share/memoria/lib/common.sh` for utilities.
+- [x] T016 [US1] Add shell integration to Stage 2 installer — after successful install, detect shell via shell-detect.sh, create `~/.local/share/memoria/shell-init.sh`, add source line to user's shell RC file (.zshrc/.bashrc)
+- [x] T017 [US1] Handle re-install scenario in `installer/memoria-install.sh` — detect existing `~/.local/share/memoria/config.json`, prompt user to reinstall or update, back up existing installation before overwrite
+- [x] T018 [US1] Create `installer/tests/integration/test-install.sh` — end-to-end install test using temp directory override (MEMORIA_INSTALL_DIR env var), verify: directory structure exists, venv works, skill symlink valid, config.json written with correct schema
 
 **Checkpoint**: `bash installer/install.sh` completes successfully, `memoria version` works, `search_knowledge("test")` returns results from Claude Code.
 
@@ -74,10 +74,10 @@
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Add version check functions to `memoria/skill_helpers.py` — implement `_check_version_cache()` (reads `~/.local/share/memoria/.version-cache`, returns None if stale/missing), `_update_version_cache()` (runs `gh api repos/IgorCandido/memoria/releases/latest` via subprocess with 5s timeout, writes VersionCache JSON), `_should_notify_update()` (compares versions, checks notification_shown flag)
-- [ ] T020 [US2] Integrate version check into `search_knowledge()` in `memoria/skill_helpers.py` — on first call (module-level `_version_checked` flag), spawn background thread for `_update_version_cache()` if cache stale. After search results, if update available and not yet notified, append notification line to output. Set notification_shown=True in cache.
-- [ ] T021 [US2] Handle version check failures gracefully in `memoria/skill_helpers.py` — network timeout (5s), `gh` not available, API rate limit, malformed JSON response. All failures silently caught, cached result used, no user-visible errors.
-- [ ] T022 [US2] Create `tests/unit/test_version_check.py` — test _check_version_cache with fresh/stale/missing cache files, test _should_notify_update with various version combinations, test graceful failure on missing gh CLI, test notification_shown flag prevents repeat notifications. Use tmp_path fixture for cache files.
+- [x] T019 [US2] Add version check functions to `memoria/skill_helpers.py` — implement `_check_version_cache()` (reads `~/.local/share/memoria/.version-cache`, returns None if stale/missing), `_update_version_cache()` (runs `gh api repos/IgorCandido/memoria/releases/latest` via subprocess with 5s timeout, writes VersionCache JSON), `_should_notify_update()` (compares versions, checks notification_shown flag)
+- [x] T020 [US2] Integrate version check into `search_knowledge()` in `memoria/skill_helpers.py` — on first call (module-level `_version_checked` flag), spawn background thread for `_update_version_cache()` if cache stale. After search results, if update available and not yet notified, append notification line to output. Set notification_shown=True in cache.
+- [x] T021 [US2] Handle version check failures gracefully in `memoria/skill_helpers.py` — network timeout (5s), `gh` not available, API rate limit, malformed JSON response. All failures silently caught, cached result used, no user-visible errors.
+- [x] T022 [US2] Create `tests/unit/test_version_check.py` — test _check_version_cache with fresh/stale/missing cache files, test _should_notify_update with various version combinations, test graceful failure on missing gh CLI, test notification_shown flag prevents repeat notifications. Use tmp_path fixture for cache files.
 
 **Checkpoint**: `search_knowledge()` shows update notification when newer version exists, does NOT show it on subsequent calls, does NOT make network calls within 24h of last check.
 
@@ -91,10 +91,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Add update command to `installer/memoria-install.sh` — parse `--version` flag (default: latest), download release tarball via download.sh, verify SHA256 checksum against checksums.txt, create backup of current repo dir to `~/.local/share/memoria/backups/v{current}-{timestamp}/`, extract new version, run `pip install -e .` to update dependencies, run health check.
-- [ ] T024 [US3] Implement rollback logic in `installer/memoria-install.sh` — if health check fails after update: restore backup directory to repo path, re-run `pip install -e .`, report error with instructions. Write BackupRecord manifest.json in backup directory.
-- [ ] T025 [US3] Add `memoria check` subcommand to `installer/templates/shell-function.sh` — force version check ignoring cache TTL, display current version, latest version, update available status.
-- [ ] T026 [US3] Create `installer/tests/integration/test-update.sh` — test update from old to new version, verify backup created, verify new version active, test rollback on simulated failure (corrupt tarball), test `--version` flag for specific version install.
+- [x] T023 [US3] Add update command to `installer/memoria-install.sh` — parse `--version` flag (default: latest), download release tarball via download.sh, verify SHA256 checksum against checksums.txt, create backup of current repo dir to `~/.local/share/memoria/backups/v{current}-{timestamp}/`, extract new version, run `pip install -e .` to update dependencies, run health check.
+- [x] T024 [US3] Implement rollback logic in `installer/memoria-install.sh` — if health check fails after update: restore backup directory to repo path, re-run `pip install -e .`, report error with instructions. Write BackupRecord manifest.json in backup directory.
+- [x] T025 [US3] Add `memoria check` subcommand to `installer/templates/shell-function.sh` — force version check ignoring cache TTL, display current version, latest version, update available status.
+- [x] T026 [US3] Create `installer/tests/integration/test-update.sh` — test update from old to new version, verify backup created, verify new version active, test rollback on simulated failure (corrupt tarball), test `--version` flag for specific version install.
 
 **Checkpoint**: `memoria update` successfully updates to latest, `memoria update --version X.Y.Z` installs specific version, failed updates roll back cleanly.
 
@@ -108,9 +108,9 @@
 
 ### Implementation for User Story 4
 
-- [ ] T027 [P] [US4] Create `scripts/package-release.sh` — accepts version arg, creates `dist/` directory, copies included files (memoria/, pyproject.toml, requirements.txt, VERSION, README.md, installer/), excludes (.git, chroma_data, docs, tests, specs, .venv, __pycache__, .specify, contexts), creates tarball `memoria-{version}.tar.gz`, computes SHA256 for all files → `checksums.txt`, generates `release-manifest.json` (ReleaseManifest entity from data-model.md)
-- [ ] T028 [US4] Create `.github/workflows/release.yml` — trigger on `v*` tag push. Job 1 (test): checkout, setup Python 3.11, install deps, run pytest. Job 2 (package): depends on test, extract version from tag, run package-release.sh, upload artifacts. Job 3 (release): depends on package, create GitHub Release via softprops/action-gh-release@v2, attach tarball + checksums + manifest, set pre-release flag if version contains `-`.
-- [ ] T029 [US4] Add optional Job 4 (validate) to `.github/workflows/release.yml` — matrix [ubuntu-latest, macos-latest], depends on release, download tarball from release, verify checksums, extract and check file count against manifest, verify Python package importable.
+- [x] T027 [P] [US4] Create `scripts/package-release.sh` — accepts version arg, creates `dist/` directory, copies included files (memoria/, pyproject.toml, requirements.txt, VERSION, README.md, installer/), excludes (.git, chroma_data, docs, tests, specs, .venv, __pycache__, .specify, contexts), creates tarball `memoria-{version}.tar.gz`, computes SHA256 for all files → `checksums.txt`, generates `release-manifest.json` (ReleaseManifest entity from data-model.md)
+- [x] T028 [US4] Create `.github/workflows/release.yml` — trigger on `v*` tag push. Job 1 (test): checkout, setup Python 3.11, install deps, run pytest. Job 2 (package): depends on test, extract version from tag, run package-release.sh, upload artifacts. Job 3 (release): depends on package, create GitHub Release via softprops/action-gh-release@v2, attach tarball + checksums + manifest, set pre-release flag if version contains `-`.
+- [x] T029 [US4] Add optional Job 4 (validate) to `.github/workflows/release.yml` — matrix [ubuntu-latest, macos-latest], depends on release, download tarball from release, verify checksums, extract and check file count against manifest, verify Python package importable.
 
 **Checkpoint**: `git tag v0.1.0 && git push origin v0.1.0` triggers GHA, creates release with valid tarball and matching checksums.
 
@@ -124,9 +124,9 @@
 
 ### Implementation for User Story 5
 
-- [ ] T030 [US5] Add uninstall command to `installer/memoria-install.sh` — parse `--yes` flag, prompt for confirmation, prompt about ChromaDB container/data (stop container? remove volume?), remove skill symlink, remove venv, remove repo directory, remove shell integration via shell-detect.sh remove_source_line(), remove `~/.local/share/memoria/` directory.
-- [ ] T031 [US5] Add `memoria uninstall` subcommand to `installer/templates/shell-function.sh` — delegates to `memoria-install.sh uninstall`, passes through `--yes` flag.
-- [ ] T032 [US5] Create `installer/tests/integration/test-uninstall.sh` — install then uninstall, verify: no `~/.local/share/memoria/`, no `~/.claude/skills/memoria` symlink, no source lines in shell RC files, Docker container stopped (if requested).
+- [x] T030 [US5] Add uninstall command to `installer/memoria-install.sh` — parse `--yes` flag, prompt for confirmation, prompt about ChromaDB container/data (stop container? remove volume?), remove skill symlink, remove venv, remove repo directory, remove shell integration via shell-detect.sh remove_source_line(), remove `~/.local/share/memoria/` directory.
+- [x] T031 [US5] Add `memoria uninstall` subcommand to `installer/templates/shell-function.sh` — delegates to `memoria-install.sh uninstall`, passes through `--yes` flag.
+- [x] T032 [US5] Create `installer/tests/integration/test-uninstall.sh` — install then uninstall, verify: no `~/.local/share/memoria/`, no `~/.claude/skills/memoria` symlink, no source lines in shell RC files, Docker container stopped (if requested).
 
 **Checkpoint**: `memoria uninstall` removes all artifacts cleanly. Fresh Claude Code session shows no memoria skill.
 
@@ -136,11 +136,11 @@
 
 **Purpose**: Documentation, security hardening, and final validation
 
-- [ ] T033 [P] Add `installer/README.md` — developer documentation for installer: architecture overview, how to test locally, how to cut a release
-- [ ] T034 [P] Add path traversal prevention to `installer/memoria-install.sh` — reject `..` in paths, block sensitive system directories (/etc, /System, /root), validate all user-provided paths
-- [ ] T035 [P] Add lock file mechanism to `installer/memoria-install.sh` using common.sh — prevent concurrent installations via atomic mkdir-based locking with 10-minute stale lock cleanup
-- [ ] T036 Validate idempotency — run install twice, verify second run detects existing installation and offers reinstall/update. Run uninstall twice, verify second run reports "not installed".
-- [ ] T037 Run quickstart.md validation — execute all commands from quickstart.md in order, verify each step succeeds
+- [x] T033 [P] Add `installer/README.md` — developer documentation for installer: architecture overview, how to test locally, how to cut a release
+- [x] T034 [P] Add path traversal prevention to `installer/memoria-install.sh` — reject `..` in paths, block sensitive system directories (/etc, /System, /root), validate all user-provided paths
+- [x] T035 [P] Add lock file mechanism to `installer/memoria-install.sh` using common.sh — prevent concurrent installations via atomic mkdir-based locking with 10-minute stale lock cleanup
+- [x] T036 Validate idempotency — run install twice, verify second run detects existing installation and offers reinstall/update. Run uninstall twice, verify second run reports "not installed".
+- [x] T037 Run quickstart.md validation — execute all commands from quickstart.md in order, verify each step succeeds
 
 ---
 
