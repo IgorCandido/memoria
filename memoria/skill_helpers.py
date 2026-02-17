@@ -2,6 +2,9 @@
 
 from pathlib import Path
 import io
+import json
+import os
+import threading
 
 # Try to import rich, but provide fallbacks if not available
 try:
@@ -61,6 +64,15 @@ _embedder = None
 _search_engine = None
 _document_processor = None
 
+# Version check state (module-level, reset per Python process / session)
+_version_checked = False
+_version_check_thread = None
+
+# Version check constants
+_VERSION_CACHE_PATH = Path.home() / ".local" / "share" / "memoria" / ".version-cache"
+_VERSION_CACHE_TTL_HOURS = 24
+_GH_TIMEOUT_SECONDS = 5
+
 
 def _get_adapters():
     global _vector_store, _embedder, _search_engine, _document_processor
@@ -84,9 +96,119 @@ def _get_adapters():
     return _vector_store, _embedder, _search_engine, _document_processor
 
 
+def _check_version_cache():
+    """Read version cache file, return dict or None if stale/missing."""
+    try:
+        if not _VERSION_CACHE_PATH.exists():
+            return None
+
+        with open(_VERSION_CACHE_PATH) as f:
+            data = json.load(f)
+
+        checked_at = data.get("checked_at", "")
+        if not checked_at:
+            return None
+
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(checked_at.replace("Z", "+00:00"))
+        age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+
+        if age_hours > _VERSION_CACHE_TTL_HOURS:
+            return None
+
+        return data
+    except Exception:
+        return None
+
+
+def _update_version_cache():
+    """Query GitHub releases API via subprocess, update cache file."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["gh", "api", "repos/IgorCandido/memoria/releases/latest", "--jq", ".tag_name"],
+            capture_output=True, text=True, timeout=_GH_TIMEOUT_SECONDS
+        )
+        if result.returncode != 0:
+            return
+
+        latest_version = result.stdout.strip().lstrip("v")
+        if not latest_version:
+            return
+
+        # Read current version
+        current_version = ""
+        version_file = MEMORIA_ROOT / "VERSION"
+        if version_file.exists():
+            current_version = version_file.read_text().strip()
+
+        from datetime import datetime, timezone
+        cache_data = {
+            "latest_version": latest_version,
+            "current_version": current_version,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "cache_ttl_hours": _VERSION_CACHE_TTL_HOURS,
+            "update_available": latest_version != current_version,
+            "notification_shown": False,
+            "check_error": None,
+        }
+
+        _VERSION_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_VERSION_CACHE_PATH, "w") as f:
+            json.dump(cache_data, f, indent=2)
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        # gh not available, network timeout, or filesystem error — silently ignore
+        pass
+    except Exception:
+        pass
+
+
+def _should_notify_update():
+    """Check if user should be notified about available update."""
+    cache = _check_version_cache()
+    if cache is None:
+        return False, ""
+
+    if not cache.get("update_available", False):
+        return False, ""
+
+    if cache.get("notification_shown", False):
+        return False, ""
+
+    return True, cache.get("latest_version", "")
+
+
+def _mark_notification_shown():
+    """Mark that the update notification has been shown this cache cycle."""
+    try:
+        if not _VERSION_CACHE_PATH.exists():
+            return
+
+        with open(_VERSION_CACHE_PATH) as f:
+            data = json.load(f)
+
+        data["notification_shown"] = True
+
+        with open(_VERSION_CACHE_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
 def search_knowledge(query, mode="hybrid", expand=True, limit=5):
+    global _version_checked, _version_check_thread
     import time as _time
-    import os as _os
+
+    # Version check on first call per session (non-blocking)
+    if not _version_checked:
+        _version_checked = True
+        cache = _check_version_cache()
+        if cache is None:
+            _version_check_thread = threading.Thread(
+                target=_update_version_cache, daemon=True
+            )
+            _version_check_thread.start()
 
     vector_store, embedder, search_engine, _ = _get_adapters()
 
@@ -94,7 +216,7 @@ def search_knowledge(query, mode="hybrid", expand=True, limit=5):
     results = search_engine.search(query=query, limit=limit, mode="hybrid" if mode == "hybrid" else "semantic")
     _perf_elapsed = (_time.time() - _perf_start) * 1000  # ms
 
-    if _os.getenv("MEMORIA_DEBUG"):
+    if os.getenv("MEMORIA_DEBUG"):
         print(f"[PERF] search_knowledge: query_time={_perf_elapsed:.1f}ms, "
               f"results={len(results)}, mode={mode}, limit={limit}")
 
@@ -110,7 +232,7 @@ def search_knowledge(query, mode="hybrid", expand=True, limit=5):
         content = result.document.content
         source = result.document.metadata.get("source", "unknown")
         score = result.score
-        
+
         if len(content) > 500:
             content = content[:500] + "..."
 
@@ -118,6 +240,12 @@ def search_knowledge(query, mode="hybrid", expand=True, limit=5):
         console.print(f"[dim]Source:[/dim] {source}")
         console.print(Panel(content, border_style="dim", padding=(0, 1)))
         console.print()
+
+    # Append update notification if available (non-blocking, shown once)
+    should_notify, latest = _should_notify_update()
+    if should_notify:
+        console.print(f"\n[dim]ℹ️  Memoria v{latest} available. Run: memoria update[/dim]")
+        _mark_notification_shown()
 
     return console.file.getvalue()
 
