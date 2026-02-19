@@ -196,6 +196,48 @@ def _mark_notification_shown():
         pass
 
 
+def _dedup_by_source(results, limit):
+    """Deduplicate search results by source document.
+
+    For each source, keeps the chunk with the best combination of score and content length.
+    Short fragments that happen to score high on keywords get replaced by longer, more
+    informative chunks from the same source (if score is within 10% range).
+    """
+    seen_sources = {}
+    for result in results:
+        source = result.document.metadata.get("source", "unknown")
+        content_len = len(result.document.content.strip())
+
+        if source not in seen_sources:
+            seen_sources[source] = result
+        else:
+            existing = seen_sources[source]
+            existing_len = len(existing.document.content.strip())
+
+            # If new result has significantly more content and score is close, prefer it
+            score_diff = existing.score - result.score
+            if content_len > existing_len * 2 and score_diff < 0.05:
+                seen_sources[source] = result
+            elif result.score > existing.score and content_len >= 50:
+                seen_sources[source] = result
+
+    # Sort by score descending, return up to limit
+    deduped = sorted(seen_sources.values(), key=lambda r: r.score, reverse=True)
+    return deduped[:limit]
+
+
+def _is_garbage_chunk(content):
+    """Filter out chunks that are mostly tags/metadata with no real content."""
+    import re
+    # Strip markdown tags, whitespace, and common metadata patterns
+    stripped = re.sub(r'#\S+', '', content)  # Remove hashtags
+    stripped = re.sub(r'\*\*[^*]+\*\*:?', '', stripped)  # Remove bold markers
+    stripped = re.sub(r'---+', '', stripped)  # Remove horizontal rules
+    stripped = re.sub(r'\s+', ' ', stripped)  # Collapse whitespace
+    stripped = stripped.strip()
+    return len(stripped) < 50
+
+
 def search_knowledge(query, mode="hybrid", expand=True, limit=5):
     global _version_checked, _version_check_thread
     import time as _time
@@ -212,23 +254,32 @@ def search_knowledge(query, mode="hybrid", expand=True, limit=5):
 
     vector_store, embedder, search_engine, _ = _get_adapters()
 
+    # Over-fetch to allow for dedup and garbage filtering
+    # With heavy source duplication, we need significantly more candidates
+    fetch_limit = max(limit * 5, 20)
     _perf_start = _time.time()
-    results = search_engine.search(query=query, limit=limit, mode="hybrid" if mode == "hybrid" else "semantic")
+    results = search_engine.search(query=query, limit=fetch_limit, mode="hybrid" if mode == "hybrid" else "semantic")
     _perf_elapsed = (_time.time() - _perf_start) * 1000  # ms
+
+    # Filter garbage chunks (tag-only, metadata-only)
+    results = [r for r in results if not _is_garbage_chunk(r.document.content)]
+
+    # Deduplicate by source document
+    results = _dedup_by_source(results, limit)
 
     if os.getenv("MEMORIA_DEBUG"):
         print(f"[PERF] search_knowledge: query_time={_perf_elapsed:.1f}ms, "
-              f"results={len(results)}, mode={mode}, limit={limit}")
+              f"results={len(results)}, mode={mode}, limit={limit}, fetched={fetch_limit}")
 
-    console = Console(file=io.StringIO(), force_terminal=False, width=120)
-    console.print(f"\n[bold cyan]📚 Search Results for \"{query}\"[/bold cyan]\n")
+    # Plain text output — no Rich panels, no box-drawing characters
+    lines = []
+    lines.append(f"Search Results for \"{query}\" ({len(results)} results)\n")
 
     if not results:
-        console.print("[yellow]No results found.[/yellow]")
-        return console.file.getvalue()
+        lines.append("No results found.")
+        return "\n".join(lines)
 
     for i, result in enumerate(results, 1):
-        # SearchResult has .document.content, not .content directly
         content = result.document.content
         source = result.document.metadata.get("source", "unknown")
         score = result.score
@@ -236,18 +287,17 @@ def search_knowledge(query, mode="hybrid", expand=True, limit=5):
         if len(content) > 500:
             content = content[:500] + "..."
 
-        console.print(f"[bold]Result {i}[/bold] (Score: {score:.2f})")
-        console.print(f"[dim]Source:[/dim] {source}")
-        console.print(Panel(content, border_style="dim", padding=(0, 1)))
-        console.print()
+        lines.append(f"[{i}] (Score: {score:.2f}) {source}")
+        lines.append(content)
+        lines.append("")  # blank line separator
 
     # Append update notification if available (non-blocking, shown once)
     should_notify, latest = _should_notify_update()
     if should_notify:
-        console.print(f"\n[dim]ℹ️  Memoria v{latest} available. Run: memoria update[/dim]")
+        lines.append(f"Memoria v{latest} available. Run: memoria update")
         _mark_notification_shown()
 
-    return console.file.getvalue()
+    return "\n".join(lines)
 
 
 def index_documents(pattern="**/*.md", rebuild=False):
