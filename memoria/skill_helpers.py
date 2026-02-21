@@ -47,11 +47,9 @@ except ImportError:
             text = re.sub(r'\[/?[^\]]+\]', '', str(self.content))
             return f"\n{'=' * 60}\n{text}\n{'=' * 60}\n"
 
-# Import adapters directly
-from memoria.adapters.chromadb.chromadb_adapter import ChromaDBAdapter
-from memoria.adapters.sentence_transformers.sentence_transformer_adapter import SentenceTransformerAdapter
-from memoria.adapters.search.search_engine_adapter import SearchEngineAdapter
-from memoria.adapters.document.document_processor_adapter import DocumentProcessorAdapter
+# Adapter imports are deferred to _get_adapters() to avoid requiring
+# chromadb/sentence-transformers at module import time. This lets
+# skill_helpers.py be imported even without those deps installed.
 
 # Paths
 MEMORIA_ROOT = Path(__file__).parent.parent
@@ -78,6 +76,11 @@ def _get_adapters():
     global _vector_store, _embedder, _search_engine, _document_processor
 
     if _vector_store is None:
+        from memoria.adapters.chromadb.chromadb_adapter import ChromaDBAdapter
+        from memoria.adapters.sentence_transformers.sentence_transformer_adapter import SentenceTransformerAdapter
+        from memoria.adapters.search.search_engine_adapter import SearchEngineAdapter
+        from memoria.adapters.document.document_processor_adapter import DocumentProcessorAdapter
+
         DOCS_DIR.mkdir(parents=True, exist_ok=True)
         CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
