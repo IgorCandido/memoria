@@ -14,7 +14,12 @@ dependencies = [
     "python-docx>=1.0.0",
     "pydantic>=2.0.0",
     "rich>=13.0.0",  # For formatted terminal output
+    "psycopg2-binary>=2.9.0",  # Postgres document store
+    "ollama>=0.4.0",  # Ollama embedding adapter
 ]
+
+[project.scripts]
+memoria = "memoria.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
