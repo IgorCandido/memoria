@@ -19,7 +19,8 @@ The goal is to introduce a durable document store (Postgres) as the single sourc
 ## Dependencies
 
 - **Spec 004 (Configurable Embeddings)**: Changing embedding models requires reindexing the entire corpus. This spec provides the reindex interface that spec 004 depends on.
-- **Existing infrastructure**: Postgres already available on port 5435 (used by workdiary). ChromaDB on port 8001 (Docker).
+- **localLab infrastructure spec**: Postgres, ChromaDB (relishhost1), and Ollama (relishhost2) must be provisioned via Ansible before integration tests can run. A Speckit spec.md in `~/Github/thinker/localLab` defines this provisioning — out of scope for this feature but a hard prerequisite for integration testing.
+- **Existing infrastructure**: Postgres on relishhost1 (Docker, configurable via env vars). ChromaDB on relishhost1 (Docker, configurable via env vars). Ollama embedding service on relishhost2 (configurable via env vars). No infrastructure runs locally on the development machine — all services are remote.
 - **Current architecture**: Onion Architecture with ports/adapters pattern — this is a clean extension via new ports and adapters.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -153,6 +154,9 @@ As a memoria operator migrating from the current system, I want to bulk-import a
 - **FR-012**: System MUST report progress during long operations (import, export, reindex) using the existing ProgressTracker pattern
 - **FR-013**: System MUST handle batch operations efficiently — import and reindex of 293 docs / 17K chunks must use batched processing (not one-at-a-time)
 - **FR-014**: System MUST provide a one-time migration function to import existing `/docs` folder contents into the database
+- **FR-015**: Both `OllamaEmbeddingAdapter` and `SentenceTransformerAdapter` MUST implement `EmbeddingGeneratorPort`; runtime config (`MEMORIA_EMBEDDING_ADAPTER` env var) selects which adapter is active
+- **FR-016**: `OllamaEmbeddingAdapter` MUST use model `mxbai-embed-large` by default (1024-dimension vectors); model name configurable via `MEMORIA_OLLAMA_MODEL`. ChromaDB collection MUST be created with matching dimensionality — switching embedding adapters requires a reindex (FR-006)
+- **FR-017**: `OllamaEmbeddingAdapter` MUST use the `ollama` Python library (`pip install ollama`) to call the Ollama REST API on relishhost2
 
 ### Non-Functional Requirements
 
@@ -182,11 +186,34 @@ As a memoria operator migrating from the current system, I want to bulk-import a
 - **SC-007**: Legacy migration from `/docs` folder imports all 293 existing documents into the database successfully
 - **SC-008**: Interrupted reindex leaves the system in a consistent state — either old index intact or new index complete, never partial
 
+## Testing Approach
+
+- All business logic tests use **port/adapter test doubles** — in-memory classes implementing the domain ports (`DocumentStorePort`, `EmbeddingGeneratorPort`, `VectorStorePort`, etc.). No mocks against real services in unit tests.
+- **Integration tests** (adapter tests against real Postgres, ChromaDB, Ollama) are written but not executed until the relishhost1/relishhost2 infrastructure is confirmed up. They are committed but skipped via `pytest.mark.integration`.
+- Test doubles live in `memoria/adapters/stubs/` and are importable by any test.
+
 ## Assumptions
 
-- Postgres on port 5435 is available and will be used for document storage (same instance used by workdiary, different database/schema)
-- The existing chunking strategy (2000-char chunks, 100-char overlap) will be reused for consistency unless changed by a future spec
-- The export file format will be JSON Lines (one JSON object per line) for streaming compatibility and human readability
-- Document content is primarily text (markdown, plain text) — binary formats (images, PDFs) are out of scope for this spec
-- The document fingerprint uses SHA-256 of the normalized (whitespace-trimmed) content for change detection
+- Postgres on relishhost1 is used for document storage — same Docker instance shared with other services, separate `memoria` database. Connection parameters configurable via `MEMORIA_PG_HOST`, `MEMORIA_PG_PORT`, `MEMORIA_PG_DATABASE`, `MEMORIA_PG_USER`, `MEMORIA_PG_PASSWORD`.
+- ChromaDB on relishhost1 is used for vector storage. Connection configurable via `MEMORIA_CHROMA_HOST`, `MEMORIA_CHROMA_PORT`.
+- Ollama on relishhost2 is the embedding service using model `mxbai-embed-large` (1024-dimension vectors). Connection configurable via `MEMORIA_OLLAMA_HOST`, `MEMORIA_OLLAMA_PORT`, `MEMORIA_OLLAMA_MODEL`. No local embedding model is required.
+- Both `OllamaEmbeddingAdapter` (new) and `SentenceTransformerAdapter` (existing) implement `EmbeddingGeneratorPort`. Runtime config selects which to use. Default is `OllamaEmbeddingAdapter` for this deployment.
+- No infrastructure services run locally on the development machine — all connections are remote.
+- Infrastructure (Postgres, ChromaDB, Ollama) is provisioned separately via a Docker Compose spec in `~/Github/thinker/localLab` — outside this feature's scope.
+- The existing chunking strategy (2000-char chunks, 100-char overlap) will be reused for consistency unless changed by a future spec.
+- The export file format will be JSON Lines (one JSON object per line) for streaming compatibility and human readability.
+- Document content is primarily text (markdown, plain text) — binary formats (images, PDFs) are out of scope for this spec.
+- The document fingerprint uses SHA-256 of the normalized (whitespace-trimmed) content for change detection.
 - Concurrent access patterns are single-writer (one Claude instance at a time) — distributed locking is not required for this spec
+
+---
+
+## Clarifications
+
+### Session 2026-03-07
+
+- Q: Does Ollama on relishhost2 replace the existing `SentenceTransformerAdapter` entirely, or should both exist as alternative implementations of `EmbeddingGeneratorPort`? → A: Coexist — both adapters implement `EmbeddingGeneratorPort`; runtime config (`MEMORIA_EMBEDDING_ADAPTER`) selects which is active
+- Q: What is the Ollama embedding model name on relishhost2? → A: `mxbai-embed-large` (1024-dimension vectors)
+- Q: Should adapter class names encode the target host (e.g., `RelishHost1PostgresDocumentStoreAdapter`)? → A: No — `PostgresDocumentStoreAdapter` is correct; "postgresRelishHost1" referred to the Docker container name in the localLab spec, not the adapter class
+- Q: What format should the localLab infrastructure spec take? → A: Speckit spec.md created in `~/Github/thinker/localLab` alongside existing specs (localLab is an Ansible codebase for local lab provisioning)
+- Q: What HTTP client should `OllamaEmbeddingAdapter` use? → A: `ollama` Python library (official client, `pip install ollama`).

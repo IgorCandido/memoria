@@ -33,7 +33,7 @@ This guide provides practical examples and patterns for using the memoria skill 
 ```bash
 /Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 << 'EOF'
 import sys
-sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
+sys.path.insert(0, '/Users/igorcandido/.claude/skills/memoria/memoria')
 from skill_helpers import health_check
 
 # Check if RAG system is healthy
@@ -55,7 +55,7 @@ Docs        ✅ 3 files
 ```bash
 /Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 << 'EOF'
 import sys
-sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
+sys.path.insert(0, '/Users/igorcandido/.claude/skills/memoria/memoria')
 from skill_helpers import search_knowledge
 
 # Search for information
@@ -89,7 +89,7 @@ Source: claude-infrastructure-chronos.md
 ```bash
 /Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 << 'EOF'
 import sys
-sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
+sys.path.insert(0, '/Users/igorcandido/.claude/skills/memoria/memoria')
 from skill_helpers import health_check, index_documents, get_stats
 
 # 1. Check system health
@@ -124,7 +124,7 @@ Collection  memoria
 ```bash
 /Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 << 'EOF'
 import sys
-sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
+sys.path.insert(0, '/Users/igorcandido/.claude/skills/memoria/memoria')
 from skill_helpers import search_knowledge
 
 # Step 1: Broad search to understand domain
@@ -161,7 +161,7 @@ EOF
 ```bash
 /Users/igorcandido/Github/thinker/claude_infra/skills/.venv/bin/python3 << 'EOF'
 import sys
-sys.path.insert(0, '/Users/igorcandido/Github/thinker/claude_infra/skills/memoria/memoria')
+sys.path.insert(0, '/Users/igorcandido/.claude/skills/memoria/memoria')
 from skill_helpers import add_document, get_stats
 
 # Before adding

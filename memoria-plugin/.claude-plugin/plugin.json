@@ -1,0 +1,5 @@
+{
+  "name": "memoria",
+  "description": "RAG knowledge base backed by PostgreSQL and ChromaDB. Provides search_knowledge, store_document, and corpus management via skill_helpers.",
+  "version": "1.1.0"
+}

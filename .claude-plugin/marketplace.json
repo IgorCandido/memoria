@@ -1,0 +1,15 @@
+{
+  "name": "memoria-local",
+  "description": "Memoria plugin marketplace (local)",
+  "owner": {
+    "name": "memoria"
+  },
+  "plugins": [
+    {
+      "name": "memoria",
+      "source": "./memoria-plugin",
+      "description": "RAG knowledge base backed by PostgreSQL and ChromaDB",
+      "version": "1.1.0"
+    }
+  ]
+}

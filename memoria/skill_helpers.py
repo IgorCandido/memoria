@@ -2,6 +2,9 @@
 
 from pathlib import Path
 import io
+import json
+import os
+import threading
 
 # Try to import rich, but provide fallbacks if not available
 try:
@@ -54,7 +57,8 @@ if _env_file.exists():
             _key, _, _val = _line.partition("=")
             os.environ.setdefault(_key.strip(), _val.strip())
 
-# Import adapters directly
+# Adapter imports are deferred to _get_adapters() to avoid requiring
+# chromadb/sentence-transformers at module import time when not using uv.
 from memoria.adapters.chromadb.chromadb_adapter import ChromaDBAdapter
 from memoria.adapters.sentence_transformers.sentence_transformer_adapter import SentenceTransformerAdapter
 from memoria.adapters.search.search_engine_adapter import SearchEngineAdapter
@@ -71,11 +75,25 @@ _embedder = None
 _search_engine = None
 _document_processor = None
 
+# Version check state (module-level, reset per Python process / session)
+_version_checked = False
+_version_check_thread = None
+
+# Version check constants
+_VERSION_CACHE_PATH = Path.home() / ".local" / "share" / "memoria" / ".version-cache"
+_VERSION_CACHE_TTL_HOURS = 24
+_GH_TIMEOUT_SECONDS = 5
+
 
 def _get_adapters():
     global _vector_store, _embedder, _search_engine, _document_processor
 
     if _vector_store is None:
+        from memoria.adapters.chromadb.chromadb_adapter import ChromaDBAdapter
+        from memoria.adapters.sentence_transformers.sentence_transformer_adapter import SentenceTransformerAdapter
+        from memoria.adapters.search.search_engine_adapter import SearchEngineAdapter
+        from memoria.adapters.document.document_processor_adapter import DocumentProcessorAdapter
+
         DOCS_DIR.mkdir(parents=True, exist_ok=True)
         CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -118,42 +136,208 @@ def _get_embedding_adapter():
     return OllamaEmbeddingAdapter()
 
 
+def _check_version_cache():
+    """Read version cache file, return dict or None if stale/missing."""
+    try:
+        if not _VERSION_CACHE_PATH.exists():
+            return None
+
+        with open(_VERSION_CACHE_PATH) as f:
+            data = json.load(f)
+
+        checked_at = data.get("checked_at", "")
+        if not checked_at:
+            return None
+
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(checked_at.replace("Z", "+00:00"))
+        age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+
+        if age_hours > _VERSION_CACHE_TTL_HOURS:
+            return None
+
+        return data
+    except Exception:
+        return None
+
+
+def _update_version_cache():
+    """Query GitHub releases API via subprocess, update cache file."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["gh", "api", "repos/IgorCandido/memoria/releases/latest", "--jq", ".tag_name"],
+            capture_output=True, text=True, timeout=_GH_TIMEOUT_SECONDS
+        )
+        if result.returncode != 0:
+            return
+
+        latest_version = result.stdout.strip().lstrip("v")
+        if not latest_version:
+            return
+
+        # Read current version
+        current_version = ""
+        version_file = MEMORIA_ROOT / "VERSION"
+        if version_file.exists():
+            current_version = version_file.read_text().strip()
+
+        from datetime import datetime, timezone
+        cache_data = {
+            "latest_version": latest_version,
+            "current_version": current_version,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "cache_ttl_hours": _VERSION_CACHE_TTL_HOURS,
+            "update_available": latest_version != current_version,
+            "notification_shown": False,
+            "check_error": None,
+        }
+
+        _VERSION_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_VERSION_CACHE_PATH, "w") as f:
+            json.dump(cache_data, f, indent=2)
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        # gh not available, network timeout, or filesystem error — silently ignore
+        pass
+    except Exception:
+        pass
+
+
+def _should_notify_update():
+    """Check if user should be notified about available update."""
+    cache = _check_version_cache()
+    if cache is None:
+        return False, ""
+
+    if not cache.get("update_available", False):
+        return False, ""
+
+    if cache.get("notification_shown", False):
+        return False, ""
+
+    return True, cache.get("latest_version", "")
+
+
+def _mark_notification_shown():
+    """Mark that the update notification has been shown this cache cycle."""
+    try:
+        if not _VERSION_CACHE_PATH.exists():
+            return
+
+        with open(_VERSION_CACHE_PATH) as f:
+            data = json.load(f)
+
+        data["notification_shown"] = True
+
+        with open(_VERSION_CACHE_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def _dedup_by_source(results, limit):
+    """Deduplicate search results by source document.
+
+    For each source, keeps the chunk with the best combination of score and content length.
+    Short fragments that happen to score high on keywords get replaced by longer, more
+    informative chunks from the same source (if score is within 10% range).
+    """
+    seen_sources = {}
+    for result in results:
+        source = result.document.metadata.get("source", "unknown")
+        content_len = len(result.document.content.strip())
+
+        if source not in seen_sources:
+            seen_sources[source] = result
+        else:
+            existing = seen_sources[source]
+            existing_len = len(existing.document.content.strip())
+
+            # If new result has significantly more content and score is close, prefer it
+            score_diff = existing.score - result.score
+            if content_len > existing_len * 2 and score_diff < 0.05:
+                seen_sources[source] = result
+            elif result.score > existing.score and content_len >= 50:
+                seen_sources[source] = result
+
+    # Sort by score descending, return up to limit
+    deduped = sorted(seen_sources.values(), key=lambda r: r.score, reverse=True)
+    return deduped[:limit]
+
+
+def _is_garbage_chunk(content):
+    """Filter out chunks that are mostly tags/metadata with no real content."""
+    import re
+    # Strip markdown tags, whitespace, and common metadata patterns
+    stripped = re.sub(r'#\S+', '', content)  # Remove hashtags
+    stripped = re.sub(r'\*\*[^*]+\*\*:?', '', stripped)  # Remove bold markers
+    stripped = re.sub(r'---+', '', stripped)  # Remove horizontal rules
+    stripped = re.sub(r'\s+', ' ', stripped)  # Collapse whitespace
+    stripped = stripped.strip()
+    return len(stripped) < 50
+
+
 def search_knowledge(query, mode="hybrid", expand=True, limit=5):
+    global _version_checked, _version_check_thread
     import time as _time
-    import os as _os
+
+    # Version check on first call per session (non-blocking)
+    if not _version_checked:
+        _version_checked = True
+        cache = _check_version_cache()
+        if cache is None:
+            _version_check_thread = threading.Thread(
+                target=_update_version_cache, daemon=True
+            )
+            _version_check_thread.start()
 
     vector_store, embedder, search_engine, _ = _get_adapters()
 
+    # Over-fetch to allow for dedup and garbage filtering
+    # With heavy source duplication, we need significantly more candidates
+    fetch_limit = max(limit * 5, 20)
     _perf_start = _time.time()
-    results = search_engine.search(query=query, limit=limit, mode="hybrid" if mode == "hybrid" else "semantic")
+    results = search_engine.search(query=query, limit=fetch_limit, mode="hybrid" if mode == "hybrid" else "semantic")
     _perf_elapsed = (_time.time() - _perf_start) * 1000  # ms
 
-    if _os.getenv("MEMORIA_DEBUG"):
-        print(f"[PERF] search_knowledge: query_time={_perf_elapsed:.1f}ms, "
-              f"results={len(results)}, mode={mode}, limit={limit}")
+    # Filter garbage chunks (tag-only, metadata-only)
+    results = [r for r in results if not _is_garbage_chunk(r.document.content)]
 
-    console = Console(file=io.StringIO(), force_terminal=False, width=120)
-    console.print(f"\n[bold cyan]📚 Search Results for \"{query}\"[/bold cyan]\n")
+    # Deduplicate by source document
+    results = _dedup_by_source(results, limit)
+
+    if os.getenv("MEMORIA_DEBUG"):
+        print(f"[PERF] search_knowledge: query_time={_perf_elapsed:.1f}ms, "
+              f"results={len(results)}, mode={mode}, limit={limit}, fetched={fetch_limit}")
+
+    # Plain text output — no Rich panels, no box-drawing characters
+    lines = []
+    lines.append(f"Search Results for \"{query}\" ({len(results)} results)\n")
 
     if not results:
-        console.print("[yellow]No results found.[/yellow]")
-        return console.file.getvalue()
+        lines.append("No results found.")
+        return "\n".join(lines)
 
     for i, result in enumerate(results, 1):
-        # SearchResult has .document.content, not .content directly
         content = result.document.content
         source = result.document.metadata.get("source", "unknown")
         score = result.score
-        
+
         if len(content) > 500:
             content = content[:500] + "..."
 
-        console.print(f"[bold]Result {i}[/bold] (Score: {score:.2f})")
-        console.print(f"[dim]Source:[/dim] {source}")
-        console.print(Panel(content, border_style="dim", padding=(0, 1)))
-        console.print()
+        lines.append(f"[{i}] (Score: {score:.2f}) {source}")
+        lines.append(content)
+        lines.append("")  # blank line separator
 
-    return console.file.getvalue()
+    # Append update notification if available (non-blocking, shown once)
+    should_notify, latest = _should_notify_update()
+    if should_notify:
+        lines.append(f"Memoria v{latest} available. Run: memoria update")
+        _mark_notification_shown()
+
+    return "\n".join(lines)
 
 
 def index_documents(pattern="**/*.md", rebuild=False):

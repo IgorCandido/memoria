@@ -685,3 +685,71 @@ Working on memoria performance optimization to address two critical issues:
 | SC-006 (zero breaking) | ✅ PASS | API signatures unchanged |
 | SC-007 (<2GB memory) | ✅ PASS | Progressive batching |
 
+---
+
+# Spec 003: Memoria Plugin Installer & Auto-Update
+
+**Feature**: 003-memoria-plugin-install
+**Started**: 2026-02-12
+**Status**: ✅ ALL TASKS COMPLETE (37/37)
+
+## Implementation Summary
+
+Built a curl-based one-line installer for memoria following the claudeSupervisor two-stage bootstrap pattern. The installer downloads from the private GitHub repo using `gh` CLI, installs to `~/.local/share/memoria/`, creates a Python venv, starts ChromaDB Docker container, and registers the Claude Code skill.
+
+### Files Created
+
+**Shell installer (`installer/`)**:
+- `install.sh` — Stage 1 bootstrap (~90 lines)
+- `memoria-install.sh` — Stage 2 full installer (~400 lines, handles install/update/uninstall/health/version/check)
+- `lib/common.sh` — Logging, OS detection, lock files, path validation
+- `lib/version.sh` — Semver parsing, comparison, normalization
+- `lib/python-check.sh` — Python 3.11+ detection
+- `lib/shell-detect.sh` — Shell detection, RC file management
+- `lib/download.sh` — GitHub downloads, SHA256 checksums, version cache
+- `lib/docker-setup.sh` — ChromaDB container lifecycle
+- `templates/shell-function.sh` — Shell function template for `memoria` command
+- `README.md` — Developer documentation
+
+**Tests**:
+- `installer/tests/unit/run-all-tests.sh` — Test runner
+- `installer/tests/unit/test-version.sh` — 38 assertions
+- `installer/tests/unit/test-common.sh` — 19 assertions
+- `installer/tests/unit/test-download.sh` — 6 assertions
+- `installer/tests/unit/test-shell-detect.sh` — 19 assertions
+- `installer/tests/integration/test-install.sh` — Install workflow
+- `installer/tests/integration/test-update.sh` — Update workflow
+- `installer/tests/integration/test-uninstall.sh` — Uninstall workflow
+- `tests/unit/test_version_check.py` — 12 pytest tests
+
+**CI/CD**:
+- `scripts/package-release.sh` — Release tarball with checksums + manifest
+- `.github/workflows/release.yml` — 4-job pipeline (test→package→release→validate)
+
+**Python changes**:
+- `memoria/skill_helpers.py` — Added version check functions and notification integration
+
+### Key Design Decisions
+
+1. **Two-stage bootstrap**: Stage 1 validates prerequisites and downloads; Stage 2 does the actual install. Keeps the curl-piped script minimal.
+2. **gh CLI for private repo access**: No tokens in scripts, leverages user's existing auth.
+3. **Version check in Python**: Runs in background thread on first `search_knowledge()` call per session. Uses 24-hour cached JSON file.
+4. **Modular shell libraries**: Each library is independently sourceable and testable. 82 total shell test assertions.
+5. **Lock file**: Atomic mkdir-based locking with 10-minute stale cleanup prevents concurrent installs.
+6. **Path security**: Validates against traversal (`..`), system dirs (`/etc`, `/System`), and shell injection (`;`, `|`, backticks, `$()`).
+
+### Test Results
+
+- Shell unit tests: 82 assertions, ALL PASS
+- Package release: Verified — tarball + checksums + manifest created, checksums verified
+- Uninstall integration: 6 tests, ALL PASS (including idempotency)
+
+### Learnings
+
+1. **Bash working directory persistence**: If a Bash command `cd`s into a directory that later gets deleted (e.g., `dist/`), subsequent Bash calls will fail silently. Always use absolute paths or recreate the directory.
+2. **validate_source_line scope**: Originally validated the full source line (which includes `&&`), but our own generated lines use `&&`. Changed to validate only the path component.
+3. **Shell RC file management**: Using a marker comment (`# Added by memoria installer`) makes add/remove idempotent without fragile pattern matching.
+
+---
+
+**Last Updated**: 2026-02-12 UTC

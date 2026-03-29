@@ -18,7 +18,7 @@ class EmbeddingGeneratorStub:
     for testing.
     """
 
-    def __init__(self, dimensions: int = 384, model_name: str = "stub-model") -> None:
+    def __init__(self, dimensions: int = 1024, model_name: str = "stub-model") -> None:
         """
         Initialize stub generator.
 

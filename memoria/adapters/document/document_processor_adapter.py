@@ -175,6 +175,10 @@ class DocumentProcessorAdapter:
                 )
                 chunks.append(chunk)
 
+            # If this chunk reached the end of text, stop (no more content)
+            if end >= len(text):
+                break
+
             # Calculate next start position with overlap
             next_start = end - overlap
 
@@ -183,10 +187,6 @@ class DocumentProcessorAdapter:
                 next_start = start + 1
 
             start = next_start
-
-            # If we've reached or passed the end, stop
-            if start >= len(text):
-                break
 
         return chunks
 

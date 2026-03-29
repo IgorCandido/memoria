@@ -140,3 +140,105 @@ class ProgressTracker:
 
     def finish(self) -> None:
         self.end_time = datetime.now()
+
+
+@dataclass(frozen=True)
+class StoredDocument:
+    """
+    Full document record in the Postgres document store.
+
+    Single source of truth for document content and metadata.
+    ChromaDB stores only the derived chunks/embeddings.
+    """
+
+    source_id: str
+    title: str
+    content: str
+    fingerprint: str  # SHA-256 hex of strip(content)
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    id: str = ""  # UUID from Postgres (empty before first persist)
+
+    def __post_init__(self) -> None:
+        """Validate stored document invariants."""
+        if not self.source_id or not self.source_id.strip():
+            raise ValueError("source_id cannot be empty")
+        if not self.title:
+            raise ValueError("title cannot be empty")
+        if not self.content:
+            raise ValueError("content cannot be empty")
+        if not self.fingerprint or len(self.fingerprint) != 64:
+            raise ValueError("fingerprint must be a 64-char SHA-256 hex string")
+        if self.version < 1:
+            raise ValueError(f"version must be >= 1, got {self.version}")
+        if self.created_at > self.updated_at:
+            raise ValueError("created_at cannot be after updated_at")
+
+
+@dataclass(frozen=True)
+class ExportManifest:
+    """
+    Metadata header written as the first line of an export file.
+    """
+
+    exported_at: datetime
+    document_count: int
+    system_version: str
+    format_version: str
+
+    def __post_init__(self) -> None:
+        if self.document_count < 0:
+            raise ValueError(f"document_count must be non-negative, got {self.document_count}")
+        if not self.format_version:
+            raise ValueError("format_version cannot be empty")
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    """
+    Summary of a corpus import operation.
+    """
+
+    documents_added: int
+    documents_updated: int
+    documents_skipped: int
+    documents_failed: int
+    errors: tuple[tuple[str, str], ...]  # ((source_id, error_message), ...)
+    duration_seconds: float
+
+    def __post_init__(self) -> None:
+        if self.documents_added < 0:
+            raise ValueError("documents_added must be non-negative")
+        if self.documents_failed < 0:
+            raise ValueError("documents_failed must be non-negative")
+        if self.duration_seconds < 0:
+            raise ValueError("duration_seconds must be non-negative")
+
+    @property
+    def total_processed(self) -> int:
+        return self.documents_added + self.documents_updated + self.documents_skipped + self.documents_failed
+
+
+@dataclass(frozen=True)
+class ReindexResult:
+    """
+    Summary of a corpus reindex operation.
+    """
+
+    documents_processed: int
+    chunks_created: int
+    documents_failed: int
+    errors: tuple[tuple[str, str], ...]  # ((source_id, error_message), ...)
+    duration_seconds: float
+    embedding_model: str
+
+    def __post_init__(self) -> None:
+        if self.documents_processed < 0:
+            raise ValueError("documents_processed must be non-negative")
+        if self.chunks_created < 0:
+            raise ValueError("chunks_created must be non-negative")
+        if self.duration_seconds < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        if not self.embedding_model:
+            raise ValueError("embedding_model cannot be empty")

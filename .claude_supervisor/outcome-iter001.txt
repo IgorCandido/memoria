@@ -1,0 +1,10 @@
+- `memoria uninstall [--yes]` — Removes all artifacts, skill symlink, shell integration, optionally Docker container
+- Idempotent — running twice is safe
+- Integration test with 6 assertions, all passing
+
+**Phase 8: Polish** (T033-T037)
+- `installer/README.md` — Developer documentation
+- Path traversal prevention integrated into installer
+- Lock file mechanism (atomic mkdir-based)
+- Idempotency verified via integration tests
+- Package release script verified (tarball + checksums match)

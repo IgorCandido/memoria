@@ -2,10 +2,32 @@
 Root pytest configuration.
 
 Redirects imports from legacy raggy.py to new facade for testing.
+Provides --run-integration flag to enable integration tests against real services.
 """
 
 import sys
 import pytest
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add --run-integration flag to enable integration tests."""
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="Run integration tests requiring real services (Postgres/ChromaDB on relishhost1, Ollama on relishhost2)",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip integration tests unless --run-integration flag is passed."""
+    if not config.getoption("--run-integration"):
+        skip_mark = pytest.mark.skip(
+            reason="Requires --run-integration flag and running infrastructure on relishhost1/relishhost2"
+        )
+        for item in items:
+            if item.get_closest_marker("integration"):
+                item.add_marker(skip_mark)
 
 
 @pytest.fixture(scope="session", autouse=True)
