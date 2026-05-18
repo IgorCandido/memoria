@@ -6,7 +6,7 @@
 
 Memoria is a lightweight RAG (Retrieval-Augmented Generation) skill that gives Claude Code persistent memory through semantic search over your documents. It replaces heavy MCP server stacks with direct Python execution - 98.7% fewer tokens, 75% less memory.
 
-> **TODO**: An automated installer is planned for the next feature (spec 003). For now, follow the manual setup below.
+> Plugin install: `./install-plugin.sh` registers memoria as a Claude Code plugin. Manual setup below covers what the installer does.
 
 ## Quick Start
 
@@ -14,8 +14,13 @@ Memoria is a lightweight RAG (Retrieval-Augmented Generation) skill that gives C
 
 - **macOS** (tested on macOS 15+)
 - **Python 3.11+** (`python3 --version`)
-- **Docker** via Colima or Docker Desktop (for ChromaDB)
+- **uv** (`uv --version`) — manages venv and entry points
+- **PostgreSQL** reachable on `relishhost1:5435` (database `memoria`) — stores full document content
+- **ChromaDB** reachable on `relishhost1:8001` (or local Docker, see below) — stores vector embeddings
+- **Ollama** reachable on `relishhost2:11434` with `mxbai-embed-large` pulled — generates 1024-dim embeddings (default)
 - **Claude Code** installed (`claude --version`)
+
+> Local-only fallback: run ChromaDB in Docker (step 2) and set `MEMORIA_EMBEDDING_ADAPTER=sentence_transformers` to use the in-process 384-dim `all-MiniLM-L6-v2` model. You still need Postgres reachable somewhere — point `MEMORIA_PG_*` at it.
 
 ### 1. Clone the Repository
 
@@ -28,12 +33,20 @@ cd ~/Github/thinker/memoria
 git worktree add main main
 ```
 
-### 2. Start ChromaDB
+### 2. Provision Storage Backends
 
-ChromaDB is the vector database that stores embeddings. It runs as a Docker container.
+Memoria uses **two** stores: Postgres for document records, ChromaDB for vector embeddings. Production deployment runs both on `relishhost1`.
+
+**Postgres (document store)** — table is created on first write; just ensure the `memoria` database exists:
 
 ```bash
-# Start ChromaDB container
+# On the Postgres host (relishhost1)
+createdb -p 5435 memoria
+```
+
+**ChromaDB (vector store)** — production hits `relishhost1:8001`. For local dev, run as a Docker container:
+
+```bash
 docker run -d \
   --name memoria-chromadb \
   -p 8001:8000 \
@@ -43,12 +56,27 @@ docker run -d \
   -e IS_PERSISTENT=TRUE \
   chromadb/chroma:latest
 
-# Verify it's running
+# Verify
 curl http://localhost:8001/api/v1/heartbeat
-# Should return: {"nanosecond heartbeat": ...}
 ```
 
-The `chroma_data/` directory at the bare root stores all vector data persistently. It survives container restarts and worktree operations.
+**Ollama (embeddings)** — default adapter posts to `relishhost2:11434`. Pull the model once:
+
+```bash
+ollama pull mxbai-embed-large
+```
+
+The `chroma_data/` directory at the bare root stores local ChromaDB vector data persistently. It survives container restarts and worktree operations.
+
+**Configure connection** — export the env vars below (or rely on defaults shown):
+
+```bash
+export MEMORIA_PG_HOST=relishhost1     MEMORIA_PG_PORT=5435
+export MEMORIA_PG_DATABASE=memoria     MEMORIA_PG_USER=postgres
+export MEMORIA_PG_PASSWORD=...
+export MEMORIA_CHROMA_HOST=relishhost1 MEMORIA_CHROMA_PORT=8001
+export MEMORIA_OLLAMA_HOST=relishhost2 MEMORIA_OLLAMA_PORT=11434
+```
 
 ### 3. Install Python Dependencies
 
@@ -156,13 +184,17 @@ ln -sfn ../chroma_data 004-configurable-embeddings/chroma_data
 ### Architecture
 
 ```
-Claude Code → skill_helpers.py → Adapters → ChromaDB (Docker, port 8001)
+Claude Code → skill_helpers.py / `uv run memoria` CLI → Adapters
                                     │
-                                    ├── ChromaDBAdapter (vector store)
-                                    ├── SentenceTransformerAdapter (embeddings: all-MiniLM-L6-v2)
-                                    ├── SearchEngineAdapter (hybrid search: 95% semantic + 5% BM25)
-                                    └── DocumentProcessorAdapter (chunking: 2000 chars, 100 overlap)
+                                    ├── PostgresDocumentStoreAdapter  (relishhost1:5435/memoria — full document content, versioning)
+                                    ├── ChromaDBAdapter               (relishhost1:8001 — vector index)
+                                    ├── OllamaEmbeddingAdapter        (relishhost2:11434, mxbai-embed-large, 1024-dim — DEFAULT)
+                                    │   └── SentenceTransformerAdapter (all-MiniLM-L6-v2, 384-dim — opt-in via MEMORIA_EMBEDDING_ADAPTER)
+                                    ├── SearchEngineAdapter           (hybrid search: 95% semantic + 5% BM25)
+                                    └── DocumentProcessorAdapter      (chunking: 2000 chars, 100 overlap)
 ```
+
+Documents are persisted in Postgres (single source of truth for content) and indexed in ChromaDB (vectors only). Reindex pulls content back from Postgres — the filesystem is no longer load-bearing.
 
 ### Search Flow
 
@@ -244,19 +276,23 @@ search_knowledge('test query')
 
 ## Configuration
 
-All configuration is currently hardcoded in `memoria/skill_helpers.py`. Planned: env var overrides (spec 004).
+Backend connections are env-driven. Tuning knobs (chunking, hybrid weights) remain in `memoria/skill_helpers.py`.
 
-| Setting | Value | Location |
-|---------|-------|----------|
-| ChromaDB host | `localhost` | `skill_helpers.py:76` |
-| ChromaDB port | `8001` | `skill_helpers.py:77` |
-| Collection name | `"memoria"` | `skill_helpers.py:74` |
-| Embedding model | `all-MiniLM-L6-v2` | `skill_helpers.py:80` |
-| Hybrid weight | `0.95` (95% semantic) | `skill_helpers.py:81` |
-| Chunk size | `2000` chars | `skill_helpers.py:82` |
-| Chunk overlap | `100` chars | `skill_helpers.py:82` |
-| Batch commit size | `500` chunks | `skill_helpers.py:142` |
-| Embedding batch | `32` texts | SentenceTransformer native |
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `MEMORIA_PG_HOST` | `relishhost1` | Postgres host |
+| `MEMORIA_PG_PORT` | `5435` | Postgres port |
+| `MEMORIA_PG_DATABASE` | `memoria` | Postgres database |
+| `MEMORIA_PG_USER` | `postgres` | Postgres user |
+| `MEMORIA_PG_PASSWORD` | `` | Postgres password |
+| `MEMORIA_CHROMA_HOST` | `relishhost1` | ChromaDB host |
+| `MEMORIA_CHROMA_PORT` | `8001` | ChromaDB port |
+| `MEMORIA_OLLAMA_HOST` | `relishhost2` | Ollama host |
+| `MEMORIA_OLLAMA_PORT` | `11434` | Ollama port |
+| `MEMORIA_EMBEDDING_ADAPTER` | `ollama` | `ollama` (mxbai-embed-large, 1024-dim) or `sentence_transformers` (all-MiniLM-L6-v2, 384-dim) |
+| `MEMORIA_DEBUG` | unset | Set `1` for perf logging |
+
+Hardcoded tuning (in `memoria/skill_helpers.py`): collection `memoria`, hybrid weight `0.95`, chunk size `2000` / overlap `100`, batch commit `500`, embedding batch `32`.
 
 ## Performance
 
@@ -275,14 +311,24 @@ All configuration is currently hardcoded in `memoria/skill_helpers.py`. Planned:
 ### ChromaDB not responding
 
 ```bash
-# Check container is running
-docker ps | grep chroma
+docker ps | grep chroma                            # local container running?
+curl http://${MEMORIA_CHROMA_HOST:-relishhost1}:${MEMORIA_CHROMA_PORT:-8001}/api/v1/heartbeat
+docker restart memoria-chromadb                    # local only
+```
 
-# Check port is available
-curl http://localhost:8001/api/v1/heartbeat
+### Postgres not reachable
 
-# Restart container
-docker restart memoria-chromadb
+```bash
+psql -h "$MEMORIA_PG_HOST" -p "$MEMORIA_PG_PORT" -U "$MEMORIA_PG_USER" -d "$MEMORIA_PG_DATABASE" -c '\dt'
+# Should list memoria tables. Errors → check MEMORIA_PG_* env, network, credentials.
+```
+
+### Ollama embedding errors
+
+```bash
+curl http://${MEMORIA_OLLAMA_HOST:-relishhost2}:${MEMORIA_OLLAMA_PORT:-11434}/api/tags
+# Confirm mxbai-embed-large is present. If not: `ollama pull mxbai-embed-large` on that host.
+# Fallback to in-process model: export MEMORIA_EMBEDDING_ADAPTER=sentence_transformers
 ```
 
 ### Import errors
@@ -310,8 +356,10 @@ print(get_stats())
 |------|--------|-------------|
 | 001-chroma-search-fix | Archived | Improved hybrid search confidence (0.54 -> 0.80) |
 | 002-memoria-performance | Complete | Batch embedding, progressive indexing, perf logging |
-| 003-memoria-plugin-install | Planned | Automated curl installer for one-command setup |
-| 004-configurable-embeddings | Future | Configurable embedding models via Ollama (fix score range) |
+| 003-memoria-plugin-install | Complete | `uv run memoria` CLI + Claude Code plugin install |
+| 004-configurable-embeddings | Complete | Ollama embedding adapter, `MEMORIA_EMBEDDING_ADAPTER` switch |
+| 005-db-document-storage | Complete | Postgres document store (relishhost1:5435), filesystem decoupled |
+| 006-rag-search-quality | In progress | Source dedup, garbage filter, plain text output |
 
 ## License
 
