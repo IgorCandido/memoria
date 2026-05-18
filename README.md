@@ -78,62 +78,48 @@ export MEMORIA_CHROMA_HOST=relishhost1 MEMORIA_CHROMA_PORT=8001
 export MEMORIA_OLLAMA_HOST=relishhost2 MEMORIA_OLLAMA_PORT=11434
 ```
 
-### 3. Install Python Dependencies
+### 3. Sync Python Dependencies
+
+`uv` manages the venv and installs the `memoria` console script.
 
 ```bash
-# Create a virtual environment (or use an existing shared one)
-python3 -m venv ~/Github/thinker/memoria/main/.venv
-
-# Install memoria in editable mode
-~/Github/thinker/memoria/main/.venv/bin/pip install -e ~/Github/thinker/memoria/main/
-
-# Verify
-~/Github/thinker/memoria/main/.venv/bin/python3 -c "import memoria; print('OK:', memoria.__file__)"
+cd ~/Github/thinker/memoria/main
+uv sync
+uv run memoria health   # smoke-test backends — Postgres, ChromaDB, Ollama
 ```
 
-### 4. Register as Claude Code Skill
+### 4. Register as Claude Code Plugin
 
 ```bash
-# Create the skill symlink (Claude Code discovers skills from ~/.claude/skills/)
-mkdir -p ~/.claude/skills
-ln -sfn ~/Github/thinker/memoria/main ~/.claude/skills/memoria
+cd ~/Github/thinker/memoria/main
+./install-plugin.sh
+# Adds memoria as a Claude Code plugin (slash command /memoria + SessionStart hook)
 ```
 
-### 5. Set Up Document Directory
+### 5. Load Documents
+
+Add a document via stdin (the canonical path — content lives in Postgres, not the filesystem):
 
 ```bash
-# Create persistent docs directory at bare root (not inside a worktree)
-mkdir -p ~/Github/thinker/memoria/docs
-
-# Create symlink from worktree to bare root docs
-ln -sfn ../docs ~/Github/thinker/memoria/main/docs
-
-# Add your markdown documents
-cp ~/path/to/your/docs/*.md ~/Github/thinker/memoria/docs/
+cd ~/Github/thinker/memoria/main
+cat ~/path/to/doc.md | uv run memoria store "doc.md" - --title "My Doc"
 ```
 
-### 6. Index Your Documents
+Bulk-load a directory of markdown files:
 
 ```bash
-# Index all markdown files in the docs/ directory
-~/Github/thinker/memoria/main/.venv/bin/python3 << 'EOF'
-import sys, os
-sys.path.insert(0, os.path.expanduser('~/Github/thinker/memoria/main/memoria'))
-from skill_helpers import index_documents
-os.chdir(os.path.expanduser('~/Github/thinker/memoria/docs'))
-print(index_documents(pattern="**/*.md"))
-EOF
+cd ~/Github/thinker/memoria/main
+for f in ~/path/to/docs/*.md; do
+  cat "$f" | uv run memoria store "$(basename "$f")" - --title "$(basename "$f" .md)"
+done
 ```
 
-### 7. Test It
+### 6. Test It
 
 ```bash
-~/Github/thinker/memoria/main/.venv/bin/python3 << 'EOF'
-import sys
-sys.path.insert(0, os.path.expanduser('~/Github/thinker/memoria/main/memoria'))
-from skill_helpers import search_knowledge
-print(search_knowledge(query="how does memoria work", mode="hybrid", limit=5))
-EOF
+cd ~/Github/thinker/memoria/main
+uv run memoria search "how does memoria work"
+uv run memoria stats
 ```
 
 ## Repository Structure
